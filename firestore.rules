@@ -1,0 +1,588 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Global Helpers
+    // -------------------------------------------------------------------------
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return request.auth.token.email_verified == true;
+    }
+
+    function isValidMemberUids(listData) {
+      return listData is list
+        && listData.size() >= 1
+        && listData.size() <= 10
+        && listData[0] is string
+        && listData[0].size() >= 1
+        && listData[0].size() <= 128;
+    }
+
+    function isResourceMember(data) {
+      return data.ownerUid == request.auth.uid
+        || (data.memberUids is list && request.auth.uid in data.memberUids);
+    }
+
+    function getCompany(companyId) {
+      return get(/databases/$(database)/documents/companies/$(companyId));
+    }
+
+    function companyExists(companyId) {
+      return exists(/databases/$(database)/documents/companies/$(companyId));
+    }
+
+    function isCompanyMember(companyId) {
+      return companyExists(companyId) && isResourceMember(getCompany(companyId).data);
+    }
+
+    function isCompanyOwner(companyId) {
+      return companyExists(companyId) && getCompany(companyId).data.ownerUid == request.auth.uid;
+    }
+
+    function hasValidTenantHeader(data, docId, companyId) {
+      return isValidId(data.id)
+        && data.id == docId
+        && isValidId(data.companyId)
+        && data.companyId == companyId
+        && data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128
+        && isValidMemberUids(data.memberUids)
+        && data.ownerUid in data.memberUids
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function preservesTenantImmutables() {
+      return incoming().id == existing().id
+        && incoming().companyId == existing().companyId
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+    }
+
+    // -------------------------------------------------------------------------
+    // Entity Validation Blueprints
+    // -------------------------------------------------------------------------
+    function isValidCompany(data) {
+      return data.keys().hasAll([
+          'id', 'name', 'currency', 'taxRate', 'taxInclusive', 'wholesaleDiscountPct',
+          'address', 'phone', 'email', 'receiptFooter', 'allowNegativeStock',
+          'ownerUid', 'memberUids', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'name', 'currency', 'taxRate', 'taxInclusive', 'wholesaleDiscountPct',
+          'address', 'phone', 'email', 'receiptFooter', 'allowNegativeStock',
+          'ownerUid', 'memberUids', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.currency is string && data.currency.size() >= 1 && data.currency.size() <= 10
+        && data.taxRate is number && data.taxRate >= 0 && data.taxRate <= 100
+        && data.taxInclusive is bool
+        && data.wholesaleDiscountPct is number && data.wholesaleDiscountPct >= 0 && data.wholesaleDiscountPct <= 95
+        && data.address is string && data.address.size() <= 250
+        && data.phone is string && data.phone.size() <= 40
+        && data.email is string && data.email.size() <= 120
+        && data.receiptFooter is string && data.receiptFooter.size() <= 300
+        && data.allowNegativeStock is bool
+        && data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128
+        && isValidMemberUids(data.memberUids)
+        && data.ownerUid in data.memberUids
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidBranch(data) {
+      return data.keys().hasAll([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'name', 'code',
+          'address', 'phone', 'isMain', 'active', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'name', 'code',
+          'address', 'phone', 'isMain', 'active', 'createdAt', 'updatedAt'
+        ])
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.code is string && data.code.size() >= 1 && data.code.size() <= 20
+        && data.address is string && data.address.size() <= 250
+        && data.phone is string && data.phone.size() <= 40
+        && data.isMain is bool
+        && data.active is bool;
+    }
+
+    function isValidStaffUser(data) {
+      return data.keys().hasAll([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'name', 'role',
+          'branchId', 'pinHash', 'active', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'name', 'role',
+          'branchId', 'pinHash', 'active', 'createdAt', 'updatedAt'
+        ])
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.role is string && data.role in ['owner', 'manager', 'cashier', 'accountant']
+        && data.branchId is string && data.branchId.size() >= 1 && data.branchId.size() <= 128
+        && data.pinHash is string && data.pinHash.size() == 64
+        && data.active is bool;
+    }
+
+    function isValidProduct(data) {
+      return data.keys().hasAll([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'sku', 'name', 'category',
+          'price', 'wholesalePrice', 'cost', 'qty', 'minStock', 'branchId',
+          'branchName', 'unit', 'active', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'sku', 'name', 'category',
+          'price', 'wholesalePrice', 'cost', 'qty', 'minStock', 'branchId',
+          'branchName', 'unit', 'active', 'createdAt', 'updatedAt'
+        ])
+        && data.sku is string && data.sku.size() >= 1 && data.sku.size() <= 64
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 200
+        && data.category is string && data.category.size() >= 1 && data.category.size() <= 80
+        && data.price is number && data.price >= 0
+        && data.wholesalePrice is number && data.wholesalePrice >= 0
+        && data.cost is number && data.cost >= 0
+        && data.qty is number
+        && data.minStock is number && data.minStock >= 0
+        && data.branchId is string && data.branchId.size() >= 1 && data.branchId.size() <= 128
+        && data.branchName is string && data.branchName.size() >= 1 && data.branchName.size() <= 80
+        && data.unit is string && data.unit.size() >= 1 && data.unit.size() <= 30
+        && data.active is bool;
+    }
+
+    function isValidSale(data) {
+      return data.keys().hasAll([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'branchId',
+          'branchName', 'staffId', 'staffName', 'saleMode', 'customerName', 'customerPhone',
+          'paymentMethod', 'items', 'subtotal', 'discountAmount', 'taxAmount', 'total',
+          'totalCost', 'amountTendered', 'changeDue', 'returnedAmount', 'status',
+          'notes', 'dateKey', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'branchId',
+          'branchName', 'staffId', 'staffName', 'saleMode', 'customerName', 'customerPhone',
+          'paymentMethod', 'items', 'subtotal', 'discountAmount', 'taxAmount', 'total',
+          'totalCost', 'amountTendered', 'changeDue', 'returnedAmount', 'status',
+          'notes', 'dateKey', 'createdAt', 'updatedAt'
+        ])
+        && data.trackingNumber is string && data.trackingNumber.size() >= 1 && data.trackingNumber.size() <= 64
+        && data.branchId is string && data.branchId.size() >= 1 && data.branchId.size() <= 128
+        && data.branchName is string && data.branchName.size() >= 1 && data.branchName.size() <= 80
+        && data.staffId is string && data.staffId.size() >= 1 && data.staffId.size() <= 128
+        && data.staffName is string && data.staffName.size() >= 1 && data.staffName.size() <= 80
+        && data.saleMode is string && data.saleMode in ['retail', 'wholesale']
+        && data.customerName is string && data.customerName.size() <= 120
+        && data.customerPhone is string && data.customerPhone.size() <= 40
+        && data.paymentMethod is string && data.paymentMethod in ['cash', 'card', 'transfer', 'credit', 'split']
+        && data.items is list && data.items.size() >= 1 && data.items.size() <= 200 && data.items[0] is map
+        && data.subtotal is number && data.subtotal >= 0
+        && data.discountAmount is number && data.discountAmount >= 0
+        && data.taxAmount is number && data.taxAmount >= 0
+        && data.total is number && data.total >= 0
+        && data.totalCost is number && data.totalCost >= 0
+        && data.amountTendered is number && data.amountTendered >= 0
+        && data.changeDue is number && data.changeDue >= 0
+        && data.returnedAmount is number && data.returnedAmount >= 0
+        && data.status is string && data.status in ['completed', 'partial_return', 'refunded']
+        && data.notes is string && data.notes.size() <= 300
+        && data.dateKey is string && data.dateKey.size() == 10;
+    }
+
+    function isValidHeldCart(data) {
+      return data.keys().hasAll([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'reference', 'branchId',
+          'branchName', 'staffId', 'staffName', 'saleMode', 'items',
+          'discountPct', 'total', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'reference', 'branchId',
+          'branchName', 'staffId', 'staffName', 'saleMode', 'items',
+          'discountPct', 'total', 'createdAt', 'updatedAt'
+        ])
+        && data.reference is string && data.reference.size() >= 1 && data.reference.size() <= 120
+        && data.branchId is string && data.branchId.size() >= 1 && data.branchId.size() <= 128
+        && data.branchName is string && data.branchName.size() >= 1 && data.branchName.size() <= 80
+        && data.staffId is string && data.staffId.size() >= 1 && data.staffId.size() <= 128
+        && data.staffName is string && data.staffName.size() >= 1 && data.staffName.size() <= 80
+        && data.saleMode is string && data.saleMode in ['retail', 'wholesale']
+        && data.items is list && data.items.size() >= 1 && data.items.size() <= 200 && data.items[0] is map
+        && data.discountPct is number && data.discountPct >= 0 && data.discountPct <= 100
+        && data.total is number && data.total >= 0;
+    }
+
+    function isValidExpense(data) {
+      return data.keys().hasAll([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'branchId',
+          'branchName', 'staffId', 'staffName', 'expenseType', 'category', 'vendor',
+          'description', 'paymentMethod', 'amount', 'taxAmount', 'totalAmount',
+          'items', 'dateKey', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'branchId',
+          'branchName', 'staffId', 'staffName', 'expenseType', 'category', 'vendor',
+          'description', 'paymentMethod', 'amount', 'taxAmount', 'totalAmount',
+          'items', 'dateKey', 'createdAt', 'updatedAt'
+        ])
+        && data.trackingNumber is string && data.trackingNumber.size() >= 1 && data.trackingNumber.size() <= 64
+        && data.branchId is string && data.branchId.size() >= 1 && data.branchId.size() <= 128
+        && data.branchName is string && data.branchName.size() >= 1 && data.branchName.size() <= 80
+        && data.staffId is string && data.staffId.size() >= 1 && data.staffId.size() <= 128
+        && data.staffName is string && data.staffName.size() >= 1 && data.staffName.size() <= 80
+        && data.expenseType is string && data.expenseType in ['inventory_purchase', 'operating', 'tax_payment', 'payroll', 'other']
+        && data.category is string && data.category.size() >= 1 && data.category.size() <= 80
+        && data.vendor is string && data.vendor.size() <= 120
+        && data.description is string && data.description.size() >= 1 && data.description.size() <= 300
+        && data.paymentMethod is string && data.paymentMethod in ['cash', 'card', 'transfer', 'credit']
+        && data.amount is number && data.amount >= 0
+        && data.taxAmount is number && data.taxAmount >= 0
+        && data.totalAmount is number && data.totalAmount >= 0
+        && data.items is list && data.items.size() <= 200 && (data.items.size() == 0 || data.items[0] is map)
+        && data.dateKey is string && data.dateKey.size() == 10;
+    }
+
+    function isValidStockTransfer(data) {
+      return data.keys().hasAll([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'fromBranchId',
+          'fromBranchName', 'toBranchId', 'toBranchName', 'staffId', 'staffName',
+          'items', 'totalQty', 'totalCostValue', 'status', 'notes', 'dateKey',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'fromBranchId',
+          'fromBranchName', 'toBranchId', 'toBranchName', 'staffId', 'staffName',
+          'items', 'totalQty', 'totalCostValue', 'status', 'notes', 'dateKey',
+          'createdAt', 'updatedAt'
+        ])
+        && data.trackingNumber is string && data.trackingNumber.size() >= 1 && data.trackingNumber.size() <= 64
+        && data.fromBranchId is string && data.fromBranchId.size() >= 1 && data.fromBranchId.size() <= 128
+        && data.fromBranchName is string && data.fromBranchName.size() >= 1 && data.fromBranchName.size() <= 80
+        && data.toBranchId is string && data.toBranchId.size() >= 1 && data.toBranchId.size() <= 128
+        && data.toBranchName is string && data.toBranchName.size() >= 1 && data.toBranchName.size() <= 80
+        && data.fromBranchId != data.toBranchId
+        && data.staffId is string && data.staffId.size() >= 1 && data.staffId.size() <= 128
+        && data.staffName is string && data.staffName.size() >= 1 && data.staffName.size() <= 80
+        && data.items is list && data.items.size() >= 1 && data.items.size() <= 200 && data.items[0] is map
+        && data.totalQty is number && data.totalQty > 0
+        && data.totalCostValue is number && data.totalCostValue >= 0
+        && data.status is string && data.status in ['completed', 'cancelled']
+        && data.notes is string && data.notes.size() <= 300
+        && data.dateKey is string && data.dateKey.size() == 10;
+    }
+
+    function isValidStockReturn(data) {
+      return data.keys().hasAll([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'saleId',
+          'saleTrackingNumber', 'branchId', 'branchName', 'staffId', 'staffName',
+          'items', 'refundMethod', 'refundSubtotal', 'refundTax', 'refundTotal',
+          'refundCost', 'restockItems', 'reason', 'dateKey', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'saleId',
+          'saleTrackingNumber', 'branchId', 'branchName', 'staffId', 'staffName',
+          'items', 'refundMethod', 'refundSubtotal', 'refundTax', 'refundTotal',
+          'refundCost', 'restockItems', 'reason', 'dateKey', 'createdAt', 'updatedAt'
+        ])
+        && data.trackingNumber is string && data.trackingNumber.size() >= 1 && data.trackingNumber.size() <= 64
+        && data.saleId is string && data.saleId.size() >= 1 && data.saleId.size() <= 128
+        && data.saleTrackingNumber is string && data.saleTrackingNumber.size() >= 1 && data.saleTrackingNumber.size() <= 64
+        && data.branchId is string && data.branchId.size() >= 1 && data.branchId.size() <= 128
+        && data.branchName is string && data.branchName.size() >= 1 && data.branchName.size() <= 80
+        && data.staffId is string && data.staffId.size() >= 1 && data.staffId.size() <= 128
+        && data.staffName is string && data.staffName.size() >= 1 && data.staffName.size() <= 80
+        && data.items is list && data.items.size() >= 1 && data.items.size() <= 200 && data.items[0] is map
+        && data.refundMethod is string && data.refundMethod in ['cash', 'card', 'transfer', 'store_credit']
+        && data.refundSubtotal is number && data.refundSubtotal >= 0
+        && data.refundTax is number && data.refundTax >= 0
+        && data.refundTotal is number && data.refundTotal >= 0
+        && data.refundCost is number && data.refundCost >= 0
+        && data.restockItems is bool
+        && data.reason is string && data.reason.size() >= 1 && data.reason.size() <= 300
+        && data.dateKey is string && data.dateKey.size() == 10;
+    }
+
+    function isValidStockTake(data) {
+      return data.keys().hasAll([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'branchId',
+          'branchName', 'staffId', 'staffName', 'actionType', 'itemsAdjusted',
+          'varianceUnits', 'varianceCostValue', 'notes', 'dateKey', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'branchId',
+          'branchName', 'staffId', 'staffName', 'actionType', 'itemsAdjusted',
+          'varianceUnits', 'varianceCostValue', 'notes', 'dateKey', 'createdAt', 'updatedAt'
+        ])
+        && data.trackingNumber is string && data.trackingNumber.size() >= 1 && data.trackingNumber.size() <= 64
+        && data.branchId is string && data.branchId.size() >= 1 && data.branchId.size() <= 128
+        && data.branchName is string && data.branchName.size() >= 1 && data.branchName.size() <= 80
+        && data.staffId is string && data.staffId.size() >= 1 && data.staffId.size() <= 128
+        && data.staffName is string && data.staffName.size() >= 1 && data.staffName.size() <= 80
+        && data.actionType is string && data.actionType in ['count_reconcile', 'reset_negative', 'reset_all_zero']
+        && data.itemsAdjusted is number && data.itemsAdjusted >= 0
+        && data.varianceUnits is number
+        && data.varianceCostValue is number
+        && data.notes is string && data.notes.size() <= 300
+        && data.dateKey is string && data.dateKey.size() == 10;
+    }
+
+    function isValidReconciliation(data) {
+      return data.keys().hasAll([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'branchId',
+          'branchName', 'staffId', 'staffName', 'dateKey', 'expectedCash', 'actualCash',
+          'expectedCard', 'actualCard', 'expectedTransfer', 'actualTransfer',
+          'cashRefunds', 'cashExpenses', 'varianceTotal', 'status', 'notes',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'branchId',
+          'branchName', 'staffId', 'staffName', 'dateKey', 'expectedCash', 'actualCash',
+          'expectedCard', 'actualCard', 'expectedTransfer', 'actualTransfer',
+          'cashRefunds', 'cashExpenses', 'varianceTotal', 'status', 'notes',
+          'createdAt', 'updatedAt'
+        ])
+        && data.trackingNumber is string && data.trackingNumber.size() >= 1 && data.trackingNumber.size() <= 64
+        && data.branchId is string && data.branchId.size() >= 1 && data.branchId.size() <= 128
+        && data.branchName is string && data.branchName.size() >= 1 && data.branchName.size() <= 80
+        && data.staffId is string && data.staffId.size() >= 1 && data.staffId.size() <= 128
+        && data.staffName is string && data.staffName.size() >= 1 && data.staffName.size() <= 80
+        && data.dateKey is string && data.dateKey.size() == 10
+        && data.expectedCash is number
+        && data.actualCash is number && data.actualCash >= 0
+        && data.expectedCard is number
+        && data.actualCard is number && data.actualCard >= 0
+        && data.expectedTransfer is number
+        && data.actualTransfer is number && data.actualTransfer >= 0
+        && data.cashRefunds is number && data.cashRefunds >= 0
+        && data.cashExpenses is number && data.cashExpenses >= 0
+        && data.varianceTotal is number
+        && data.status is string && data.status in ['balanced', 'variance_noted']
+        && data.notes is string && data.notes.size() <= 300;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection Match Rules
+    // -------------------------------------------------------------------------
+    match /companies/{companyId} {
+      allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isResourceMember(existing());
+      allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+      allow create: if isSignedIn() && isVerified() && isValidId(companyId)
+        && isValidCompany(incoming())
+        && incoming().id == companyId
+        && incoming().ownerUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isSignedIn() && isVerified() && isValidId(companyId)
+        && isValidCompany(incoming())
+        && existing().ownerUid == request.auth.uid
+        && incoming().id == existing().id
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'currency', 'taxRate', 'taxInclusive', 'wholesaleDiscountPct',
+            'address', 'phone', 'email', 'receiptFooter', 'allowNegativeStock', 'updatedAt'
+          ]) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt'])
+        );
+      allow delete: if isSignedIn() && isVerified() && isValidId(companyId) && existing().ownerUid == request.auth.uid;
+
+      match /branches/{branchId} {
+        allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(branchId) && isCompanyMember(companyId);
+        allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+        allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(branchId)
+          && isValidBranch(incoming()) && hasValidTenantHeader(incoming(), branchId, companyId)
+          && isCompanyMember(companyId)
+          && incoming().ownerUid == getCompany(companyId).data.ownerUid
+          && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+        allow update: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(branchId)
+          && isValidBranch(incoming()) && hasValidTenantHeader(incoming(), branchId, companyId)
+          && isCompanyMember(companyId) && preservesTenantImmutables()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['name', 'code', 'address', 'phone', 'active', 'updatedAt']) ||
+            (isCompanyOwner(companyId) && incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']))
+          );
+        allow delete: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(branchId) && isCompanyOwner(companyId);
+      }
+
+      match /staff/{staffId} {
+        allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(staffId) && isCompanyMember(companyId);
+        allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+        allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(staffId)
+          && isValidStaffUser(incoming()) && hasValidTenantHeader(incoming(), staffId, companyId)
+          && isCompanyMember(companyId)
+          && incoming().ownerUid == getCompany(companyId).data.ownerUid
+          && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+        allow update: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(staffId)
+          && isValidStaffUser(incoming()) && hasValidTenantHeader(incoming(), staffId, companyId)
+          && isCompanyMember(companyId) && preservesTenantImmutables()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['name', 'role', 'branchId', 'pinHash', 'active', 'updatedAt']) ||
+            (isCompanyOwner(companyId) && incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']))
+          );
+        allow delete: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(staffId) && isCompanyOwner(companyId);
+      }
+
+      match /products/{productId} {
+        allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(productId) && isCompanyMember(companyId);
+        allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+        allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(productId)
+          && isValidProduct(incoming()) && hasValidTenantHeader(incoming(), productId, companyId)
+          && isCompanyMember(companyId)
+          && incoming().ownerUid == getCompany(companyId).data.ownerUid
+          && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+        allow update: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(productId)
+          && isValidProduct(incoming()) && hasValidTenantHeader(incoming(), productId, companyId)
+          && isCompanyMember(companyId) && preservesTenantImmutables()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['qty', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['qty', 'cost', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'sku', 'name', 'category', 'price', 'wholesalePrice', 'cost',
+              'qty', 'minStock', 'unit', 'active', 'updatedAt'
+            ]) ||
+            (isCompanyOwner(companyId) && incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']))
+          );
+        allow delete: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(productId) && isCompanyOwner(companyId);
+      }
+
+      match /sales/{saleId} {
+        allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(saleId) && isCompanyMember(companyId);
+        allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+        allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(saleId)
+          && isValidSale(incoming()) && hasValidTenantHeader(incoming(), saleId, companyId)
+          && isCompanyMember(companyId)
+          && incoming().ownerUid == getCompany(companyId).data.ownerUid
+          && incoming().status == 'completed'
+          && incoming().returnedAmount == 0
+          && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+        allow update: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(saleId)
+          && isValidSale(incoming()) && hasValidTenantHeader(incoming(), saleId, companyId)
+          && isCompanyMember(companyId) && preservesTenantImmutables()
+          && existing().status != 'refunded'
+          && (
+            (incoming().status in ['partial_return', 'refunded']
+              && incoming().diff(existing()).affectedKeys().hasOnly(['items', 'returnedAmount', 'status', 'updatedAt'])) ||
+            (isCompanyOwner(companyId) && incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']))
+          );
+        allow delete: if false;
+      }
+
+      match /heldCarts/{cartId} {
+        allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(cartId) && isCompanyMember(companyId);
+        allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+        allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(cartId)
+          && isValidHeldCart(incoming()) && hasValidTenantHeader(incoming(), cartId, companyId)
+          && isCompanyMember(companyId)
+          && incoming().ownerUid == getCompany(companyId).data.ownerUid
+          && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+        allow update: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(cartId)
+          && isValidHeldCart(incoming()) && hasValidTenantHeader(incoming(), cartId, companyId)
+          && isCompanyMember(companyId) && preservesTenantImmutables()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['reference', 'saleMode', 'items', 'discountPct', 'total', 'updatedAt']);
+        allow delete: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(cartId) && isCompanyMember(companyId);
+      }
+
+      match /expenses/{expenseId} {
+        allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(expenseId) && isCompanyMember(companyId);
+        allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+        allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(expenseId)
+          && isValidExpense(incoming()) && hasValidTenantHeader(incoming(), expenseId, companyId)
+          && isCompanyMember(companyId)
+          && incoming().ownerUid == getCompany(companyId).data.ownerUid
+          && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+        allow update: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(expenseId)
+          && isValidExpense(incoming()) && hasValidTenantHeader(incoming(), expenseId, companyId)
+          && isCompanyOwner(companyId) && preservesTenantImmutables()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']);
+        allow delete: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(expenseId) && isCompanyOwner(companyId);
+      }
+
+      match /transfers/{transferId} {
+        allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(transferId) && isCompanyMember(companyId);
+        allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+        allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(transferId)
+          && isValidStockTransfer(incoming()) && hasValidTenantHeader(incoming(), transferId, companyId)
+          && isCompanyMember(companyId)
+          && incoming().ownerUid == getCompany(companyId).data.ownerUid
+          && incoming().status == 'completed'
+          && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+        allow update: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(transferId)
+          && isValidStockTransfer(incoming()) && hasValidTenantHeader(incoming(), transferId, companyId)
+          && isCompanyOwner(companyId) && preservesTenantImmutables()
+          && existing().status != 'cancelled'
+          && (
+            (incoming().status == 'cancelled' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'notes', 'updatedAt'])) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt'])
+          );
+        allow delete: if false;
+      }
+
+      match /returns/{returnId} {
+        allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(returnId) && isCompanyMember(companyId);
+        allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+        allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(returnId)
+          && isValidStockReturn(incoming()) && hasValidTenantHeader(incoming(), returnId, companyId)
+          && isCompanyMember(companyId)
+          && incoming().ownerUid == getCompany(companyId).data.ownerUid
+          && exists(/databases/$(database)/documents/companies/$(companyId)/sales/$(incoming().saleId))
+          && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+        allow update: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(returnId)
+          && isValidStockReturn(incoming()) && hasValidTenantHeader(incoming(), returnId, companyId)
+          && isCompanyOwner(companyId) && preservesTenantImmutables()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']);
+        allow delete: if false;
+      }
+
+      match /stockTakes/{stockTakeId} {
+        allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(stockTakeId) && isCompanyMember(companyId);
+        allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+        allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(stockTakeId)
+          && isValidStockTake(incoming()) && hasValidTenantHeader(incoming(), stockTakeId, companyId)
+          && isCompanyMember(companyId)
+          && incoming().ownerUid == getCompany(companyId).data.ownerUid
+          && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+        allow update: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(stockTakeId)
+          && isValidStockTake(incoming()) && hasValidTenantHeader(incoming(), stockTakeId, companyId)
+          && isCompanyOwner(companyId) && preservesTenantImmutables()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']);
+        allow delete: if false;
+      }
+
+      match /reconciliations/{reconciliationId} {
+        allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(reconciliationId) && isCompanyMember(companyId);
+        allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+        allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(reconciliationId)
+          && isValidReconciliation(incoming()) && hasValidTenantHeader(incoming(), reconciliationId, companyId)
+          && isCompanyMember(companyId)
+          && incoming().ownerUid == getCompany(companyId).data.ownerUid
+          && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+        allow update: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(reconciliationId)
+          && isValidReconciliation(incoming()) && hasValidTenantHeader(incoming(), reconciliationId, companyId)
+          && isCompanyOwner(companyId) && preservesTenantImmutables()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']);
+        allow delete: if false;
+      }
+    }
+  }
+}

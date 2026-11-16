@@ -1,0 +1,387 @@
+{
+  "entities": {
+    "Company": {
+      "title": "Company",
+      "description": "Multi-branch business tenant configuration and ownership record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "currency": { "type": "string", "minLength": 1, "maxLength": 10 },
+        "taxRate": { "type": "number" },
+        "taxInclusive": { "type": "boolean" },
+        "wholesaleDiscountPct": { "type": "number" },
+        "address": { "type": "string", "maxLength": 250 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "email": { "type": "string", "maxLength": 120 },
+        "receiptFooter": { "type": "string", "maxLength": 300 },
+        "allowNegativeStock": { "type": "boolean" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "name", "currency", "taxRate", "taxInclusive", "wholesaleDiscountPct",
+        "address", "phone", "email", "receiptFooter", "allowNegativeStock",
+        "ownerUid", "memberUids", "createdAt", "updatedAt"
+      ]
+    },
+    "Branch": {
+      "title": "Branch",
+      "description": "Physical store or warehouse branch belonging to a company.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "code": { "type": "string", "minLength": 1, "maxLength": 20 },
+        "address": { "type": "string", "maxLength": 250 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "isMain": { "type": "boolean" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "companyId", "ownerUid", "memberUids", "name", "code",
+        "address", "phone", "isMain", "active", "createdAt", "updatedAt"
+      ]
+    },
+    "StaffUser": {
+      "title": "StaffUser",
+      "description": "POS operator / staff user with hashed PIN and role permissions.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "role": { "type": "string", "enum": ["owner", "manager", "cashier", "accountant"] },
+        "branchId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "pinHash": { "type": "string", "minLength": 64, "maxLength": 64 },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "companyId", "ownerUid", "memberUids", "name", "role",
+        "branchId", "pinHash", "active", "createdAt", "updatedAt"
+      ]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Branch-scoped inventory item supporting retail and wholesale pricing.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "sku": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "category": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "price": { "type": "number" },
+        "wholesalePrice": { "type": "number" },
+        "cost": { "type": "number" },
+        "qty": { "type": "number" },
+        "minStock": { "type": "number" },
+        "branchId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "branchName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "unit": { "type": "string", "minLength": 1, "maxLength": 30 },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "companyId", "ownerUid", "memberUids", "sku", "name", "category",
+        "price", "wholesalePrice", "cost", "qty", "minStock", "branchId",
+        "branchName", "unit", "active", "createdAt", "updatedAt"
+      ]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "Completed POS retail or wholesale transaction with tax and COGS.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "trackingNumber": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "branchId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "branchName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "staffId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "staffName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "saleMode": { "type": "string", "enum": ["retail", "wholesale"] },
+        "customerName": { "type": "string", "maxLength": 120 },
+        "customerPhone": { "type": "string", "maxLength": 40 },
+        "paymentMethod": { "type": "string", "enum": ["cash", "card", "transfer", "credit", "split"] },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "discountAmount": { "type": "number" },
+        "taxAmount": { "type": "number" },
+        "total": { "type": "number" },
+        "totalCost": { "type": "number" },
+        "amountTendered": { "type": "number" },
+        "changeDue": { "type": "number" },
+        "returnedAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["completed", "partial_return", "refunded"] },
+        "notes": { "type": "string", "maxLength": 300 },
+        "dateKey": { "type": "string", "minLength": 10, "maxLength": 10 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "companyId", "ownerUid", "memberUids", "trackingNumber", "branchId",
+        "branchName", "staffId", "staffName", "saleMode", "customerName", "customerPhone",
+        "paymentMethod", "items", "subtotal", "discountAmount", "taxAmount", "total",
+        "totalCost", "amountTendered", "changeDue", "returnedAmount", "status",
+        "notes", "dateKey", "createdAt", "updatedAt"
+      ]
+    },
+    "HeldCart": {
+      "title": "HeldCart",
+      "description": "Suspended POS cart awaiting checkout resume across devices.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "reference": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "branchId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "branchName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "staffId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "staffName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "saleMode": { "type": "string", "enum": ["retail", "wholesale"] },
+        "items": { "type": "array" },
+        "discountPct": { "type": "number" },
+        "total": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "companyId", "ownerUid", "memberUids", "reference", "branchId",
+        "branchName", "staffId", "staffName", "saleMode", "items",
+        "discountPct", "total", "createdAt", "updatedAt"
+      ]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Inventory purchase expenditure or operating expense with input tax.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "trackingNumber": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "branchId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "branchName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "staffId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "staffName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "expenseType": { "type": "string", "enum": ["inventory_purchase", "operating", "tax_payment", "payroll", "other"] },
+        "category": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "vendor": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "paymentMethod": { "type": "string", "enum": ["cash", "card", "transfer", "credit"] },
+        "amount": { "type": "number" },
+        "taxAmount": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "items": { "type": "array" },
+        "dateKey": { "type": "string", "minLength": 10, "maxLength": 10 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "companyId", "ownerUid", "memberUids", "trackingNumber", "branchId",
+        "branchName", "staffId", "staffName", "expenseType", "category", "vendor",
+        "description", "paymentMethod", "amount", "taxAmount", "totalAmount",
+        "items", "dateKey", "createdAt", "updatedAt"
+      ]
+    },
+    "StockTransfer": {
+      "title": "StockTransfer",
+      "description": "Inter-branch inventory transfer record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "trackingNumber": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "fromBranchId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "fromBranchName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "toBranchId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "toBranchName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "staffId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "staffName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "items": { "type": "array" },
+        "totalQty": { "type": "number" },
+        "totalCostValue": { "type": "number" },
+        "status": { "type": "string", "enum": ["completed", "cancelled"] },
+        "notes": { "type": "string", "maxLength": 300 },
+        "dateKey": { "type": "string", "minLength": 10, "maxLength": 10 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "companyId", "ownerUid", "memberUids", "trackingNumber", "fromBranchId",
+        "fromBranchName", "toBranchId", "toBranchName", "staffId", "staffName",
+        "items", "totalQty", "totalCostValue", "status", "notes", "dateKey",
+        "createdAt", "updatedAt"
+      ]
+    },
+    "StockReturn": {
+      "title": "StockReturn",
+      "description": "Customer stock return and refund record tied to a sale.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "trackingNumber": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "saleId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "saleTrackingNumber": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "branchId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "branchName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "staffId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "staffName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "items": { "type": "array" },
+        "refundMethod": { "type": "string", "enum": ["cash", "card", "transfer", "store_credit"] },
+        "refundSubtotal": { "type": "number" },
+        "refundTax": { "type": "number" },
+        "refundTotal": { "type": "number" },
+        "refundCost": { "type": "number" },
+        "restockItems": { "type": "boolean" },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "dateKey": { "type": "string", "minLength": 10, "maxLength": 10 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "companyId", "ownerUid", "memberUids", "trackingNumber", "saleId",
+        "saleTrackingNumber", "branchId", "branchName", "staffId", "staffName",
+        "items", "refundMethod", "refundSubtotal", "refundTax", "refundTotal",
+        "refundCost", "restockItems", "reason", "dateKey", "createdAt", "updatedAt"
+      ]
+    },
+    "StockTake": {
+      "title": "StockTake",
+      "description": "Physical inventory audit, variance adjustment, or stock reset log.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "trackingNumber": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "branchId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "branchName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "staffId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "staffName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "actionType": { "type": "string", "enum": ["count_reconcile", "reset_negative", "reset_all_zero"] },
+        "itemsAdjusted": { "type": "number" },
+        "varianceUnits": { "type": "number" },
+        "varianceCostValue": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 300 },
+        "dateKey": { "type": "string", "minLength": 10, "maxLength": 10 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "companyId", "ownerUid", "memberUids", "trackingNumber", "branchId",
+        "branchName", "staffId", "staffName", "actionType", "itemsAdjusted",
+        "varianceUnits", "varianceCostValue", "notes", "dateKey", "createdAt", "updatedAt"
+      ]
+    },
+    "Reconciliation": {
+      "title": "Reconciliation",
+      "description": "End-of-day cash, card, and transfer drawer reconciliation record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "trackingNumber": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "branchId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "branchName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "staffId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "staffName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "dateKey": { "type": "string", "minLength": 10, "maxLength": 10 },
+        "expectedCash": { "type": "number" },
+        "actualCash": { "type": "number" },
+        "expectedCard": { "type": "number" },
+        "actualCard": { "type": "number" },
+        "expectedTransfer": { "type": "number" },
+        "actualTransfer": { "type": "number" },
+        "cashRefunds": { "type": "number" },
+        "cashExpenses": { "type": "number" },
+        "varianceTotal": { "type": "number" },
+        "status": { "type": "string", "enum": ["balanced", "variance_noted"] },
+        "notes": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "companyId", "ownerUid", "memberUids", "trackingNumber", "branchId",
+        "branchName", "staffId", "staffName", "dateKey", "expectedCash", "actualCash",
+        "expectedCard", "actualCard", "expectedTransfer", "actualTransfer",
+        "cashRefunds", "cashExpenses", "varianceTotal", "status", "notes",
+        "createdAt", "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/companies/{companyId}": {
+      "schema": { "$ref": "#/entities/Company" },
+      "description": "Tenant company records owned by authenticated users."
+    },
+    "/companies/{companyId}/branches/{branchId}": {
+      "schema": { "$ref": "#/entities/Branch" },
+      "description": "Branches belonging to a company."
+    },
+    "/companies/{companyId}/staff/{staffId}": {
+      "schema": { "$ref": "#/entities/StaffUser" },
+      "description": "Staff operators and PIN hashes belonging to a company."
+    },
+    "/companies/{companyId}/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Branch-scoped inventory products."
+    },
+    "/companies/{companyId}/sales/{saleId}": {
+      "schema": { "$ref": "#/entities/Sale" },
+      "description": "Retail and wholesale POS sales transactions."
+    },
+    "/companies/{companyId}/heldCarts/{cartId}": {
+      "schema": { "$ref": "#/entities/HeldCart" },
+      "description": "Held POS carts synchronized across devices."
+    },
+    "/companies/{companyId}/expenses/{expenseId}": {
+      "schema": { "$ref": "#/entities/Expense" },
+      "description": "Inventory purchases and operating expenditures."
+    },
+    "/companies/{companyId}/transfers/{transferId}": {
+      "schema": { "$ref": "#/entities/StockTransfer" },
+      "description": "Inter-branch stock transfer logs."
+    },
+    "/companies/{companyId}/returns/{returnId}": {
+      "schema": { "$ref": "#/entities/StockReturn" },
+      "description": "Customer returns and refunds."
+    },
+    "/companies/{companyId}/stockTakes/{stockTakeId}": {
+      "schema": { "$ref": "#/entities/StockTake" },
+      "description": "Stock take and reset audit records."
+    },
+    "/companies/{companyId}/reconciliations/{reconciliationId}": {
+      "schema": { "$ref": "#/entities/Reconciliation" },
+      "description": "Daily financial reconciliations."
+    }
+  }
+}
