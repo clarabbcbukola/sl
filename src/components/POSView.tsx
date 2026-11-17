@@ -227,7 +227,7 @@ export const POSView: React.FC = () => {
   return (
     <div className="flex flex-col lg:flex-row h-[calc(100vh-3.5rem)] overflow-hidden">
       {/* Left/Center: Catalog & Search */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50 dark:bg-slate-950">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#F4F8FB] dark:bg-slate-950">
         {/* POS Toolbar */}
         <div className="p-4 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 space-y-3">
           <div className="flex flex-wrap items-center gap-3">
@@ -376,12 +376,12 @@ export const POSView: React.FC = () => {
                       type="button"
                       disabled={isOut}
                       onClick={() => addToCart(product, 1)}
-                      className={`group flex flex-col justify-between rounded-xl border p-3.5 text-left transition-colors ${
+                      className={`group flex flex-col justify-between rounded-xl border p-3.5 text-left transition-all ${
                         isOut
                           ? 'border-slate-200 bg-slate-100/70 opacity-75 cursor-not-allowed dark:border-slate-800 dark:bg-slate-900/40'
                           : inCart
-                          ? 'border-teal-600 bg-white hover:bg-teal-50/30 cursor-pointer dark:border-teal-500 dark:bg-slate-900'
-                          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/70 cursor-pointer dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700'
+                          ? 'border-teal-500 bg-white shadow-sm shadow-teal-600/10 hover:bg-teal-50/40 cursor-pointer dark:border-teal-500 dark:bg-slate-900 dark:shadow-none'
+                          : 'border-slate-200/90 bg-white shadow-2xs hover:border-teal-300 hover:shadow-sm cursor-pointer dark:border-slate-800 dark:bg-slate-900 dark:shadow-none dark:hover:border-slate-700'
                       }`}
                     >
                       <div>
@@ -624,7 +624,7 @@ export const POSView: React.FC = () => {
         </div>
 
         {/* Cart Footer & Totals */}
-        <div className="border-t border-slate-200 bg-slate-50 p-4 space-y-3 dark:border-slate-800 dark:bg-slate-950">
+        <div className="border-t border-slate-200 bg-sky-50/40 p-4 space-y-3 dark:border-slate-800 dark:bg-slate-950">
           {/* Discount Input */}
           <div className="flex items-center justify-between text-xs">
             <span className="font-medium text-slate-600 dark:text-slate-400">Cart Discount (%)</span>
@@ -676,7 +676,7 @@ export const POSView: React.FC = () => {
               type="button"
               disabled={cart.length === 0}
               onClick={handleOpenCheckout}
-              className="col-span-2 flex items-center justify-center gap-2 rounded-lg bg-teal-600 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-40 transition-colors cursor-pointer"
+              className="col-span-2 flex items-center justify-center gap-2 rounded-lg bg-teal-600 py-2.5 text-sm font-semibold text-white shadow-sm shadow-teal-600/20 hover:bg-teal-700 disabled:opacity-40 dark:shadow-none transition-colors cursor-pointer"
             >
               <CreditCard className="h-4 w-4" />
               <span>Charge {formatCurrency(cartTotals.total, cur)}</span>

@@ -848,7 +848,7 @@ export const AccountingExpensesView: React.FC = () => {
 
             <button
               type="submit"
-              className="w-full flex items-center justify-center gap-2 rounded-lg bg-slate-900 py-2.5 text-xs font-semibold text-white hover:bg-slate-800 dark:bg-teal-600 dark:hover:bg-teal-700 cursor-pointer"
+              className="w-full flex items-center justify-center gap-2 rounded-lg bg-teal-600 py-2.5 text-xs font-semibold text-white shadow-sm shadow-teal-600/20 hover:bg-teal-700 dark:shadow-none cursor-pointer"
             >
               <CheckCircle2 className="h-4 w-4" />
               <span>Commit Daily Reconciliation</span>

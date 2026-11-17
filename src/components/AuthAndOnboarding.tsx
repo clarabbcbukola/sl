@@ -19,6 +19,7 @@ export const AuthAndOnboarding: React.FC = () => {
     firebaseUser,
     authReady,
     isLoadingData,
+    isOnline,
     seedProgress,
     company,
     branches,
@@ -98,9 +99,9 @@ export const AuthAndOnboarding: React.FC = () => {
 
   if (!authReady || isLoadingData) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
-        <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-8 text-center dark:border-slate-800 dark:bg-slate-900">
-          <div className="mx-auto h-10 w-10 rounded-lg bg-slate-900 text-white flex items-center justify-center font-display font-bold text-lg dark:bg-teal-600">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-sky-50 via-white to-teal-50/70 dark:from-slate-950 dark:via-slate-950 dark:to-slate-950 p-6">
+        <div className="w-full max-w-md rounded-xl border border-slate-200/90 bg-white p-8 text-center shadow-sm shadow-slate-900/[0.04] dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
+          <div className="mx-auto h-10 w-10 rounded-lg bg-gradient-to-br from-teal-500 to-emerald-600 text-white flex items-center justify-center font-display font-bold text-lg shadow-sm shadow-teal-600/20 dark:bg-teal-600 dark:from-teal-600 dark:to-teal-600 dark:shadow-none">
             SL
           </div>
           <h2 className="mt-4 text-lg font-semibold text-slate-900 dark:text-white">
@@ -155,10 +156,10 @@ export const AuthAndOnboarding: React.FC = () => {
   // 1. Google Cloud Sign-In
   if (!firebaseUser) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
-        <header className="flex items-center justify-between gap-8 px-6 py-4 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+      <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-teal-50/70 dark:from-slate-950 dark:via-slate-950 dark:to-slate-950 flex flex-col">
+        <header className="flex items-center justify-between gap-8 px-6 py-4 border-b border-slate-200/80 bg-white/95 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center gap-2.5 whitespace-nowrap shrink-0">
-            <div className="h-8 w-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-display font-bold text-sm dark:bg-teal-600">
+            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-teal-500 to-emerald-600 text-white flex items-center justify-center font-display font-bold text-sm shadow-sm shadow-teal-600/20 dark:bg-teal-600 dark:from-teal-600 dark:to-teal-600 dark:shadow-none">
               SL
             </div>
             <span className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">
@@ -199,9 +200,9 @@ export const AuthAndOnboarding: React.FC = () => {
               </div>
             </div>
 
-            <div className="lg:col-span-5 rounded-xl border border-slate-200 bg-white p-7 flex flex-col justify-between dark:border-slate-800 dark:bg-slate-900">
+            <div className="lg:col-span-5 rounded-xl border border-slate-200/90 bg-white p-7 flex flex-col justify-between shadow-sm shadow-slate-900/[0.04] dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
               <div>
-                <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-slate-900 text-white dark:bg-teal-600">
+                <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-gradient-to-br from-teal-500 to-emerald-600 text-white shadow-sm shadow-teal-600/20 dark:bg-teal-600 dark:from-teal-600 dark:to-teal-600 dark:shadow-none">
                   <ShieldCheck className="h-5 w-5" />
                 </div>
                 <h2 className="mt-5 text-xl font-bold text-slate-900 dark:text-white">
@@ -210,6 +211,12 @@ export const AuthAndOnboarding: React.FC = () => {
                 <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
                   Connect your Google account to create your company or access your synchronized branches across devices.
                 </p>
+
+                {!isOnline && (
+                  <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/50 dark:text-amber-300">
+                    Internet is required to open &amp; sign in initially. Once signed in, all store operations work offline and sync automatically.
+                  </div>
+                )}
 
                 {authError && (
                   <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs font-medium text-red-700 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-300">
@@ -222,6 +229,10 @@ export const AuthAndOnboarding: React.FC = () => {
                 <button
                   type="button"
                   onClick={async () => {
+                    if (!isOnline) {
+                      setAuthError('Connect to the internet to complete Google Sign-In.');
+                      return;
+                    }
                     setAuthError('');
                     try {
                       await signInWithGoogle();
@@ -229,7 +240,7 @@ export const AuthAndOnboarding: React.FC = () => {
                       setAuthError(err instanceof Error ? err.message : 'Sign-in cancelled or failed.');
                     }
                   }}
-                  className="w-full flex items-center justify-center gap-3 rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 transition-colors dark:bg-teal-600 dark:hover:bg-teal-700 cursor-pointer"
+                  className="w-full flex items-center justify-center gap-3 rounded-lg bg-teal-600 px-4 py-3 text-sm font-semibold text-white shadow-sm shadow-teal-600/20 hover:bg-teal-700 transition-colors dark:bg-teal-600 dark:hover:bg-teal-700 dark:shadow-none cursor-pointer"
                 >
                   <svg className="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
                     <path
@@ -294,10 +305,10 @@ export const AuthAndOnboarding: React.FC = () => {
     };
 
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
-        <header className="flex items-center justify-between gap-8 px-6 py-4 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+      <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-teal-50/70 dark:from-slate-950 dark:via-slate-950 dark:to-slate-950 flex flex-col">
+        <header className="flex items-center justify-between gap-8 px-6 py-4 border-b border-slate-200/80 bg-white/95 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-display font-bold text-sm dark:bg-teal-600">
+            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-teal-500 to-emerald-600 text-white flex items-center justify-center font-display font-bold text-sm shadow-sm shadow-teal-600/20 dark:bg-teal-600 dark:from-teal-600 dark:to-teal-600 dark:shadow-none">
               SL
             </div>
             <span className="text-lg font-bold text-slate-900 dark:text-white">StockLedger</span>
@@ -514,7 +525,7 @@ export const AuthAndOnboarding: React.FC = () => {
             <button
               type="submit"
               disabled={isCreating}
-              className="w-full flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60 transition-colors dark:bg-teal-600 dark:hover:bg-teal-700 cursor-pointer"
+              className="w-full flex items-center justify-center gap-2 rounded-lg bg-teal-600 px-5 py-3 text-sm font-semibold text-white shadow-sm shadow-teal-600/20 hover:bg-teal-700 disabled:opacity-60 transition-colors dark:bg-teal-600 dark:hover:bg-teal-700 dark:shadow-none cursor-pointer"
             >
               <CheckCircle2 className="h-4 w-4" />
               <span>{isCreating ? 'Creating Company & Syncing Stock...' : 'Create Company & Launch POS'}</span>
@@ -529,10 +540,10 @@ export const AuthAndOnboarding: React.FC = () => {
   const selectedStaff = activeStaffList.find((s) => s.id === selectedStaffId) || activeStaffList[0];
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
-      <header className="flex items-center justify-between gap-8 px-6 py-4 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-teal-50/70 dark:from-slate-950 dark:via-slate-950 dark:to-slate-950 flex flex-col">
+      <header className="flex items-center justify-between gap-8 px-6 py-4 border-b border-slate-200/80 bg-white/95 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="h-8 w-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-display font-bold text-sm dark:bg-teal-600 shrink-0">
+          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-teal-500 to-emerald-600 text-white flex items-center justify-center font-display font-bold text-sm shadow-sm shadow-teal-600/20 dark:bg-teal-600 dark:from-teal-600 dark:to-teal-600 dark:shadow-none shrink-0">
             SL
           </div>
           <span className="text-lg font-bold text-slate-900 dark:text-white truncate">
@@ -703,7 +714,7 @@ export const AuthAndOnboarding: React.FC = () => {
               type="button"
               onClick={() => handlePinSubmit()}
               disabled={pinInput.length < 4}
-              className="mt-5 w-full flex items-center justify-center gap-2 rounded-lg bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-40 transition-colors dark:bg-teal-600 dark:hover:bg-teal-700 cursor-pointer"
+              className="mt-5 w-full flex items-center justify-center gap-2 rounded-lg bg-teal-600 py-3 text-sm font-semibold text-white shadow-sm shadow-teal-600/20 hover:bg-teal-700 disabled:opacity-40 transition-colors dark:bg-teal-600 dark:hover:bg-teal-700 dark:shadow-none cursor-pointer"
             >
               <KeyRound className="h-4 w-4" />
               <span>Unlock Terminal</span>

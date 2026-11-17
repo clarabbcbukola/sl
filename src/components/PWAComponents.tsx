@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Download, Smartphone, WifiOff, X } from 'lucide-react';
-import { usePWAInstall } from '../hooks/usePWAInstall';
+import { Download, RefreshCw, Smartphone, WifiOff, X } from 'lucide-react';
+import { useApp } from '../contexts/AppContext';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
+import { usePWAInstall } from '../hooks/usePWAInstall';
 
 export const PWAInstallButton: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
@@ -16,7 +17,7 @@ export const PWAInstallButton: React.FC<{ compact?: boolean }> = ({ compact = fa
       <button
         type="button"
         onClick={install}
-        className="flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-700 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+        className="flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-teal-600/20 hover:bg-teal-700 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
       >
         <Download className="h-3.5 w-3.5" />
         <span>{compact ? 'Install' : 'Install App'}</span>
@@ -30,9 +31,9 @@ export const PWAInstallButton: React.FC<{ compact?: boolean }> = ({ compact = fa
         <button
           type="button"
           onClick={() => setShowIOSGuide(true)}
-          className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 whitespace-nowrap shrink-0 cursor-pointer"
+          className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-xs hover:bg-teal-50/60 hover:border-teal-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:shadow-none dark:hover:bg-slate-700 whitespace-nowrap shrink-0 cursor-pointer"
         >
-          <Smartphone className="h-3.5 w-3.5" />
+          <Smartphone className="h-3.5 w-3.5 text-teal-600 dark:text-teal-400" />
           <span>Install on iOS</span>
         </button>
 
@@ -59,7 +60,7 @@ export const PWAInstallButton: React.FC<{ compact?: boolean }> = ({ compact = fa
               <button
                 type="button"
                 onClick={() => setShowIOSGuide(false)}
-                className="mt-5 w-full rounded-lg bg-slate-900 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 dark:bg-teal-600 dark:hover:bg-teal-700 cursor-pointer"
+                className="mt-5 w-full rounded-lg bg-teal-600 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 dark:bg-teal-600 dark:hover:bg-teal-700 cursor-pointer"
               >
                 Got it
               </button>
@@ -75,13 +76,23 @@ export const PWAInstallButton: React.FC<{ compact?: boolean }> = ({ compact = fa
 
 export const OfflineIndicator: React.FC = () => {
   const isOnline = useOnlineStatus();
+  const { hasPendingSync } = useApp();
 
-  if (isOnline) return null;
+  if (isOnline && !hasPendingSync) return null;
+
+  if (!isOnline) {
+    return (
+      <div className="fixed bottom-4 left-4 z-50 flex items-center gap-2 rounded-lg bg-amber-600 px-3.5 py-2 text-xs font-semibold text-white shadow-lg no-print">
+        <WifiOff className="h-3.5 w-3.5 shrink-0" />
+        <span>Offline Mode — All operations work locally &amp; will sync automatically</span>
+      </div>
+    );
+  }
 
   return (
-    <div className="fixed bottom-4 left-4 z-50 flex items-center gap-2 rounded-lg bg-amber-600 px-3.5 py-2 text-xs font-semibold text-white shadow-lg no-print">
-      <WifiOff className="h-3.5 w-3.5" />
-      <span>Offline Mode — Changes cached locally and will sync automatically</span>
+    <div className="fixed bottom-4 left-4 z-50 flex items-center gap-2 rounded-lg bg-teal-600 px-3.5 py-2 text-xs font-semibold text-white shadow-lg no-print">
+      <RefreshCw className="h-3.5 w-3.5 shrink-0 animate-spin" />
+      <span>Back Online — Syncing offline transactions to cloud...</span>
     </div>
   );
 };

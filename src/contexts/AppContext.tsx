@@ -14,6 +14,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  waitForPendingWrites,
   where,
   writeBatch,
 } from 'firebase/firestore';
@@ -61,6 +62,8 @@ interface AppContextValue {
   firebaseUser: User | null;
   authReady: boolean;
   isLoadingData: boolean;
+  isOnline: boolean;
+  hasPendingSync: boolean;
   seedProgress: { current: number; total: number; label: string } | null;
   company: Company | null;
   branches: Branch[];
@@ -209,6 +212,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
+  const [isOnline, setIsOnline] = useState<boolean>(
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+  const [pendingMap, setPendingMap] = useState<Record<string, boolean>>({});
   const [seedProgress, setSeedProgress] = useState<{ current: number; total: number; label: string } | null>(null);
 
   const [company, setCompany] = useState<Company | null>(null);
@@ -243,6 +250,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const toggleDarkMode = useCallback(() => {
     setDarkMode((prev) => !prev);
+  }, []);
+
+  const hasPendingSync = useMemo(
+    () => Object.values(pendingMap).some(Boolean),
+    [pendingMap]
+  );
+
+  const commitOfflineSafe = useCallback(
+    async (writePromise: Promise<void>, opType: OperationType, path: string): Promise<void> => {
+      const guarded = writePromise.catch((err) => {
+        handleFirestoreError(err, opType, path);
+      });
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        return;
+      }
+      await Promise.race([
+        guarded,
+        new Promise<void>((resolve) => setTimeout(resolve, 2500)),
+      ]);
+    },
+    []
+  );
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      waitForPendingWrites(db).catch(() => {
+        // Pending writes continue retrying automatically via Firestore cache
+      });
+    };
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   useEffect(() => {
@@ -284,7 +329,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const unsub = onSnapshot(
       q,
+      { includeMetadataChanges: true },
       (snap) => {
+        setPendingMap((prev) => ({ ...prev, companies: snap.metadata.hasPendingWrites }));
         if (snap.empty) {
           setCompany(null);
           setIsLoadingData(false);
@@ -322,7 +369,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
       return onSnapshot(
         q,
+        { includeMetadataChanges: true },
         (snap) => {
+          setPendingMap((prev) => ({ ...prev, [subPath]: snap.metadata.hasPendingWrites }));
           const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as T);
           if (sortFn) list.sort(sortFn);
           setter(list);
@@ -333,9 +382,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
     };
 
-    const getTimeMs = (item: { createdAt?: unknown }) => {
+    const getTimeMs = (item: { id?: string; createdAt?: unknown }) => {
       const ts = item.createdAt as { toMillis?: () => number } | undefined;
-      return ts && typeof ts.toMillis === 'function' ? ts.toMillis() : 0;
+      if (ts && typeof ts.toMillis === 'function') return ts.toMillis();
+      if (item.id) {
+        const parts = item.id.split('_');
+        if (parts.length >= 2) {
+          const parsed = Number.parseInt(parts[1], 36);
+          if (Number.isFinite(parsed) && parsed > 0) return parsed;
+        }
+      }
+      return Date.now();
     };
 
     const unsubs = [
@@ -456,11 +513,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             updatedAt: serverTimestamp(),
           });
         });
-        try {
-          await batch.commit();
-        } catch (err) {
-          handleFirestoreError(err, OperationType.WRITE, `companies/${comp.id}/products`);
-        }
+        await commitOfflineSafe(
+          batch.commit(),
+          OperationType.WRITE,
+          `companies/${comp.id}/products`
+        );
         setSeedProgress({
           current: Math.min(i + slice.length, rows.length),
           total: rows.length,
@@ -468,7 +525,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       }
     },
-    []
+    [commitOfflineSafe]
   );
 
   const createCompanyWithPreload = useCallback(
@@ -732,16 +789,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         batch.delete(doc(db, 'companies', company.id, 'heldCarts', activeHeldCartId));
       }
 
-      try {
-        await batch.commit();
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `companies/${company.id}/sales/${saleId}`);
-      }
+      await commitOfflineSafe(
+        batch.commit(),
+        OperationType.WRITE,
+        `companies/${company.id}/sales/${saleId}`
+      );
 
       clearCart();
       return saleDoc;
     },
-    [company, activeBranch, activeStaff, cart, saleMode, cartDiscountPct, products, activeHeldCartId, clearCart]
+    [company, activeBranch, activeStaff, cart, saleMode, cartDiscountPct, products, activeHeldCartId, clearCart, commitOfflineSafe]
   );
 
   const holdCurrentCart = useCallback(
@@ -767,8 +824,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         company
       );
 
-      try {
-        await setDoc(doc(db, 'companies', company.id, 'heldCarts', cartId), {
+      await commitOfflineSafe(
+        setDoc(doc(db, 'companies', company.id, 'heldCarts', cartId), {
           id: cartId,
           companyId: company.id,
           ownerUid: company.ownerUid,
@@ -784,14 +841,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           total: totals.total,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, `companies/${company.id}/heldCarts/${cartId}`);
-      }
+        }),
+        OperationType.CREATE,
+        `companies/${company.id}/heldCarts/${cartId}`
+      );
 
       clearCart();
     },
-    [company, activeBranch, activeStaff, cart, saleMode, cartDiscountPct, clearCart]
+    [company, activeBranch, activeStaff, cart, saleMode, cartDiscountPct, clearCart, commitOfflineSafe]
   );
 
   const resumeHeldCart = useCallback(
@@ -822,26 +879,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       setCart(restored);
 
-      try {
-        await deleteDoc(doc(db, 'companies', company.id, 'heldCarts', heldCartId));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `companies/${company.id}/heldCarts/${heldCartId}`);
-      }
+      await commitOfflineSafe(
+        deleteDoc(doc(db, 'companies', company.id, 'heldCarts', heldCartId)),
+        OperationType.DELETE,
+        `companies/${company.id}/heldCarts/${heldCartId}`
+      );
       setActiveHeldCartId(null);
     },
-    [company, heldCarts, branches, products]
+    [company, heldCarts, branches, products, commitOfflineSafe]
   );
 
   const deleteHeldCart = useCallback(
     async (heldCartId: string) => {
       if (!company) return;
-      try {
-        await deleteDoc(doc(db, 'companies', company.id, 'heldCarts', heldCartId));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `companies/${company.id}/heldCarts/${heldCartId}`);
-      }
+      await commitOfflineSafe(
+        deleteDoc(doc(db, 'companies', company.id, 'heldCarts', heldCartId)),
+        OperationType.DELETE,
+        `companies/${company.id}/heldCarts/${heldCartId}`
+      );
     },
-    [company]
+    [company, commitOfflineSafe]
   );
 
   const saveProduct = useCallback(
@@ -851,8 +908,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ) => {
       if (!company) return;
       if (existingId) {
-        try {
-          await updateDoc(doc(db, 'companies', company.id, 'products', existingId), {
+        await commitOfflineSafe(
+          updateDoc(doc(db, 'companies', company.id, 'products', existingId), {
             sku: clampStr(data.sku, 64),
             name: clampStr(data.name, 200),
             category: clampStr(data.category, 80),
@@ -864,14 +921,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             unit: clampStr(data.unit || 'pcs', 30) || 'pcs',
             active: data.active,
             updatedAt: serverTimestamp(),
-          });
-        } catch (err) {
-          handleFirestoreError(err, OperationType.UPDATE, `companies/${company.id}/products/${existingId}`);
-        }
+          }),
+          OperationType.UPDATE,
+          `companies/${company.id}/products/${existingId}`
+        );
       } else {
         const prodId = generateId('prd');
-        try {
-          await setDoc(doc(db, 'companies', company.id, 'products', prodId), {
+        await commitOfflineSafe(
+          setDoc(doc(db, 'companies', company.id, 'products', prodId), {
             id: prodId,
             companyId: company.id,
             ownerUid: company.ownerUid,
@@ -890,25 +947,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             active: data.active,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
-          });
-        } catch (err) {
-          handleFirestoreError(err, OperationType.CREATE, `companies/${company.id}/products/${prodId}`);
-        }
+          }),
+          OperationType.CREATE,
+          `companies/${company.id}/products/${prodId}`
+        );
       }
     },
-    [company]
+    [company, commitOfflineSafe]
   );
 
   const deleteProduct = useCallback(
     async (productId: string) => {
       if (!company) return;
-      try {
-        await deleteDoc(doc(db, 'companies', company.id, 'products', productId));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `companies/${company.id}/products/${productId}`);
-      }
+      await commitOfflineSafe(
+        deleteDoc(doc(db, 'companies', company.id, 'products', productId)),
+        OperationType.DELETE,
+        `companies/${company.id}/products/${productId}`
+      );
     },
-    [company]
+    [company, commitOfflineSafe]
   );
 
   const importCSVProducts = useCallback(
@@ -952,11 +1009,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             updatedAt: serverTimestamp(),
           });
         }
-        try {
-          await batch.commit();
-        } catch (err) {
-          handleFirestoreError(err, OperationType.UPDATE, `companies/${company.id}/products`);
-        }
+        await commitOfflineSafe(
+          batch.commit(),
+          OperationType.UPDATE,
+          `companies/${company.id}/products`
+        );
       }
 
       if (toCreate.length > 0) {
@@ -974,7 +1031,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return { created: toCreate.length, updated: toUpdate.length };
     },
-    [company, branches, products, writeProductBatches]
+    [company, branches, products, writeProductBatches, commitOfflineSafe]
   );
 
   const reloadPreloadedCSV = useCallback(
@@ -1091,15 +1148,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
 
-      try {
-        await batch.commit();
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `companies/${company.id}/transfers/${transferId}`);
-      }
+      await commitOfflineSafe(
+        batch.commit(),
+        OperationType.WRITE,
+        `companies/${company.id}/transfers/${transferId}`
+      );
 
       return transferDoc;
     },
-    [company, activeStaff, branches, products]
+    [company, activeStaff, branches, products, commitOfflineSafe]
   );
 
   const commitStockTake = useCallback(
@@ -1160,28 +1217,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             updatedAt: serverTimestamp(),
           });
         }
-        try {
-          await batch.commit();
-        } catch (err) {
-          handleFirestoreError(err, OperationType.WRITE, `companies/${company.id}/stockTakes/${stockTakeId}`);
-        }
+        await commitOfflineSafe(
+          batch.commit(),
+          OperationType.WRITE,
+          `companies/${company.id}/stockTakes/${stockTakeId}`
+        );
       }
 
       if (params.adjustments.length === 0) {
-        try {
-          await setDoc(doc(db, 'companies', company.id, 'stockTakes', stockTakeId), {
+        await commitOfflineSafe(
+          setDoc(doc(db, 'companies', company.id, 'stockTakes', stockTakeId), {
             ...stockTakeDoc,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
-          });
-        } catch (err) {
-          handleFirestoreError(err, OperationType.CREATE, `companies/${company.id}/stockTakes/${stockTakeId}`);
-        }
+          }),
+          OperationType.CREATE,
+          `companies/${company.id}/stockTakes/${stockTakeId}`
+        );
       }
 
       return stockTakeDoc;
     },
-    [company, activeStaff, branches]
+    [company, activeStaff, branches, commitOfflineSafe]
   );
 
   const processStockReturn = useCallback(
@@ -1289,15 +1346,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
 
-      try {
-        await batch.commit();
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `companies/${company.id}/returns/${returnId}`);
-      }
+      await commitOfflineSafe(
+        batch.commit(),
+        OperationType.WRITE,
+        `companies/${company.id}/returns/${returnId}`
+      );
 
       return returnDoc;
     },
-    [company, activeStaff, products]
+    [company, activeStaff, products, commitOfflineSafe]
   );
 
   const recordExpense = useCallback(
@@ -1372,15 +1429,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
 
-      try {
-        await batch.commit();
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `companies/${company.id}/expenses/${expenseId}`);
-      }
+      await commitOfflineSafe(
+        batch.commit(),
+        OperationType.WRITE,
+        `companies/${company.id}/expenses/${expenseId}`
+      );
 
       return expenseDoc;
     },
-    [company, activeStaff, branches, activeBranch]
+    [company, activeStaff, branches, activeBranch, commitOfflineSafe]
   );
 
   const commitReconciliation = useCallback(
@@ -1432,19 +1489,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notes: clampStr(params.notes, 300),
       };
 
-      try {
-        await setDoc(doc(db, 'companies', company.id, 'reconciliations', recId), {
+      await commitOfflineSafe(
+        setDoc(doc(db, 'companies', company.id, 'reconciliations', recId), {
           ...recDoc,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, `companies/${company.id}/reconciliations/${recId}`);
-      }
+        }),
+        OperationType.CREATE,
+        `companies/${company.id}/reconciliations/${recId}`
+      );
 
       return recDoc;
     },
-    [company, activeStaff, branches, activeBranch]
+    [company, activeStaff, branches, activeBranch, commitOfflineSafe]
   );
 
   const updateCompanySettings = useCallback(
@@ -1466,16 +1523,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       >
     ) => {
       if (!company) return;
-      try {
-        await updateDoc(doc(db, 'companies', company.id), {
+      await commitOfflineSafe(
+        updateDoc(doc(db, 'companies', company.id), {
           ...patch,
           updatedAt: serverTimestamp(),
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.UPDATE, `companies/${company.id}`);
-      }
+        }),
+        OperationType.UPDATE,
+        `companies/${company.id}`
+      );
     },
-    [company]
+    [company, commitOfflineSafe]
   );
 
   const createBranch = useCallback(
@@ -1494,18 +1551,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isMain: false,
         active: true,
       };
-      try {
-        await setDoc(doc(db, 'companies', company.id, 'branches', branchId), {
+      await commitOfflineSafe(
+        setDoc(doc(db, 'companies', company.id, 'branches', branchId), {
           ...branchDoc,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, `companies/${company.id}/branches/${branchId}`);
-      }
+        }),
+        OperationType.CREATE,
+        `companies/${company.id}/branches/${branchId}`
+      );
       return branchDoc;
     },
-    [company]
+    [company, commitOfflineSafe]
   );
 
   const updateBranch = useCallback(
@@ -1514,16 +1571,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       patch: Partial<Pick<Branch, 'name' | 'code' | 'address' | 'phone' | 'active'>>
     ) => {
       if (!company) return;
-      try {
-        await updateDoc(doc(db, 'companies', company.id, 'branches', branchId), {
+      await commitOfflineSafe(
+        updateDoc(doc(db, 'companies', company.id, 'branches', branchId), {
           ...patch,
           updatedAt: serverTimestamp(),
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.UPDATE, `companies/${company.id}/branches/${branchId}`);
-      }
+        }),
+        OperationType.UPDATE,
+        `companies/${company.id}/branches/${branchId}`
+      );
     },
-    [company]
+    [company, commitOfflineSafe]
   );
 
   const createStaffUser = useCallback(
@@ -1542,18 +1599,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         pinHash,
         active: true,
       };
-      try {
-        await setDoc(doc(db, 'companies', company.id, 'staff', staffId), {
+      await commitOfflineSafe(
+        setDoc(doc(db, 'companies', company.id, 'staff', staffId), {
           ...staffDoc,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, `companies/${company.id}/staff/${staffId}`);
-      }
+        }),
+        OperationType.CREATE,
+        `companies/${company.id}/staff/${staffId}`
+      );
       return staffDoc;
     },
-    [company]
+    [company, commitOfflineSafe]
   );
 
   const updateStaffUser = useCallback(
@@ -1571,19 +1628,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (patch.active !== undefined) updatePayload.active = patch.active;
       if (patch.newPin) updatePayload.pinHash = await hashPin(patch.newPin);
 
-      try {
-        await updateDoc(doc(db, 'companies', company.id, 'staff', staffId), updatePayload);
-      } catch (err) {
-        handleFirestoreError(err, OperationType.UPDATE, `companies/${company.id}/staff/${staffId}`);
-      }
+      await commitOfflineSafe(
+        updateDoc(doc(db, 'companies', company.id, 'staff', staffId), updatePayload),
+        OperationType.UPDATE,
+        `companies/${company.id}/staff/${staffId}`
+      );
     },
-    [company]
+    [company, commitOfflineSafe]
   );
 
   const value: AppContextValue = {
     firebaseUser,
     authReady,
     isLoadingData,
+    isOnline,
+    hasPendingSync,
     seedProgress,
     company,
     branches,
