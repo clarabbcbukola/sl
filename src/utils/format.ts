@@ -37,7 +37,7 @@ export function generateId(prefix = 'id'): string {
   return `${prefix}_${Date.now().toString(36)}_${rand}`;
 }
 
-export function generateTrackingNumber(prefix: 'TRX' | 'TRF' | 'RET' | 'EXP' | 'STK' | 'REC'): string {
+export function generateTrackingNumber(prefix: 'TRX' | 'TRF' | 'RET' | 'EXP' | 'STK' | 'REC' | 'SES'): string {
   const now = new Date();
   const y = String(now.getFullYear()).slice(-2);
   const m = String(now.getMonth() + 1).padStart(2, '0');
@@ -125,5 +125,20 @@ export function formatTimestamp(ts: unknown): string {
     });
   } catch {
     return 'Recent';
+  }
+}
+
+export function formatDateTimeMs(ms?: number): string {
+  if (!ms || ms <= 0) return '—';
+  try {
+    return new Date(ms).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '—';
   }
 }

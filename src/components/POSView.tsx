@@ -9,8 +9,10 @@ import {
   PauseCircle,
   Play,
   Plus,
+  Printer,
   Search,
   ShoppingBag,
+  Square,
   Trash2,
   X,
 } from 'lucide-react';
@@ -18,12 +20,16 @@ import { useApp } from '../contexts/AppContext';
 import { PaymentMethod, Product, Sale } from '../types';
 import { calculateCartTotals } from '../utils/accounting';
 import { formatCurrency, formatNumber, formatTimestamp, getStockStatus } from '../utils/format';
+import { PAPER_SIZE_META, executeReceiptPrint } from '../utils/printer';
 import { ReceiptModal } from './ReceiptModal';
+import { SessionModal } from './SessionModal';
 
 export const POSView: React.FC = () => {
   const {
     company,
     activeBranch,
+    activeSession,
+    printSettings,
     products,
     heldCarts,
     cart,
@@ -55,7 +61,9 @@ export const POSView: React.FC = () => {
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [completedSale, setCompletedSale] = useState<Sale | null>(null);
+  const [autoPrintedMethod, setAutoPrintedMethod] = useState<string | null>(null);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
+  const [sessionModalMode, setSessionModalMode] = useState<'open' | 'close' | null>(null);
 
   // Checkout fields
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
@@ -63,6 +71,7 @@ export const POSView: React.FC = () => {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [notes, setNotes] = useState('');
+  const [printOnConfirm, setPrintOnConfirm] = useState<boolean>(printSettings.autoPrintOnConfirm);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [checkoutError, setCheckoutError] = useState('');
 
@@ -145,6 +154,7 @@ export const POSView: React.FC = () => {
   const handleOpenCheckout = () => {
     if (cart.length === 0) return;
     setAmountTendered(String(cartTotals.total));
+    setPrintOnConfirm(printSettings.autoPrintOnConfirm);
     setCheckoutError('');
     setShowCheckoutModal(true);
   };
@@ -172,6 +182,15 @@ export const POSView: React.FC = () => {
       setCustomerName('');
       setCustomerPhone('');
       setNotes('');
+
+      let methodUsed: string | null = null;
+      if (printOnConfirm && company) {
+        const res = await executeReceiptPrint(created, company, printSettings, {
+          isReprint: false,
+        });
+        methodUsed = res.method;
+      }
+      setAutoPrintedMethod(methodUsed);
       setCompletedSale(created);
     } catch (err) {
       setCheckoutError(err instanceof Error ? err.message : 'Checkout failed.');
@@ -230,6 +249,49 @@ export const POSView: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#F4F8FB] dark:bg-slate-950">
         {/* POS Toolbar */}
         <div className="p-4 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 space-y-3">
+          {/* Active Session Bar */}
+          <div
+            className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs ${
+              activeSession
+                ? 'border-teal-200 bg-teal-50/60 text-teal-900 dark:border-teal-900 dark:bg-teal-950/30 dark:text-teal-200'
+                : 'border-amber-200 bg-amber-50/70 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200'
+            }`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <Clock className="h-3.5 w-3.5 shrink-0" />
+              {activeSession ? (
+                <span className="truncate">
+                  <span className="font-bold">{activeSession.sessionNumber}</span> · Business Day{' '}
+                  <span className="font-mono font-semibold">{activeSession.businessDateKey}</span> · Opened by{' '}
+                  {activeSession.openedByStaffName}
+                </span>
+              ) : (
+                <span className="truncate">
+                  No open day session for {activeBranch?.name || 'branch'} — open a session to tag sales for End-of-Day reports
+                </span>
+              )}
+            </div>
+            {activeSession ? (
+              <button
+                type="button"
+                onClick={() => setSessionModalMode('close')}
+                className="inline-flex items-center gap-1 rounded-md bg-white border border-teal-300 px-2.5 py-1 text-[11px] font-semibold text-teal-800 hover:bg-teal-50 dark:bg-slate-900 dark:border-teal-800 dark:text-teal-300 whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Square className="h-3 w-3" />
+                <span>Close Session &amp; EOD</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setSessionModalMode('open')}
+                className="inline-flex items-center gap-1 rounded-md bg-teal-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-teal-700 whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Play className="h-3 w-3" />
+                <span>Start Day Session</span>
+              </button>
+            )}
+          </div>
+
           <div className="flex flex-wrap items-center gap-3">
             {/* Search Input */}
             <div className="relative flex-1 min-w-[220px]">
@@ -967,13 +1029,34 @@ export const POSView: React.FC = () => {
               <p className="text-xs font-medium text-red-600 dark:text-red-400">{checkoutError}</p>
             )}
 
+            <label className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-sky-50/40 px-3 py-2 text-xs font-medium text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 cursor-pointer">
+              <span className="flex items-center gap-2">
+                <Printer className="h-3.5 w-3.5 text-teal-600" />
+                <span>
+                  Print 1 copy silently ({PAPER_SIZE_META[printSettings.paperSize].shortLabel})
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={printOnConfirm}
+                onChange={(e) => setPrintOnConfirm(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-teal-600"
+              />
+            </label>
+
             <button
               type="submit"
               disabled={isCheckingOut}
-              className="w-full flex items-center justify-center gap-2 rounded-lg bg-teal-600 py-3 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-50 cursor-pointer"
+              className="w-full flex items-center justify-center gap-2 rounded-lg bg-teal-600 py-3 text-sm font-semibold text-white shadow-sm shadow-teal-600/20 hover:bg-teal-700 disabled:opacity-50 dark:shadow-none cursor-pointer"
             >
-              <CheckCircle2 className="h-4 w-4" />
-              <span>{isCheckingOut ? 'Processing Sale...' : 'Confirm & Issue Receipt'}</span>
+              {printOnConfirm ? <Printer className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+              <span>
+                {isCheckingOut
+                  ? 'Processing Sale...'
+                  : printOnConfirm
+                  ? 'Confirm and Print Receipt'
+                  : 'Confirm & Issue Receipt'}
+              </span>
             </button>
           </form>
         </div>
@@ -984,7 +1067,19 @@ export const POSView: React.FC = () => {
         <ReceiptModal
           sale={completedSale}
           company={company}
-          onClose={() => setCompletedSale(null)}
+          autoPrintedMethod={autoPrintedMethod}
+          onClose={() => {
+            setCompletedSale(null);
+            setAutoPrintedMethod(null);
+          }}
+        />
+      )}
+
+      {/* Open / Close Day Session Modal */}
+      {sessionModalMode && (
+        <SessionModal
+          initialMode={sessionModalMode}
+          onClose={() => setSessionModalMode(null)}
         />
       )}
     </div>

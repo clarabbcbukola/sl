@@ -6,6 +6,62 @@ export type RefundMethod = 'cash' | 'card' | 'transfer' | 'store_credit';
 export type StockTakeAction = 'count_reconcile' | 'reset_negative' | 'reset_all_zero';
 export type NavSection = 'pos' | 'inventory' | 'returns' | 'accounting' | 'reports' | 'settings';
 
+export type PrintPaperSize = 'thermal_80' | 'thermal_58' | 'a5' | 'a4' | 'letter';
+export type PrintEngineMode = 'silent_iframe' | 'escpos_usb' | 'escpos_serial';
+export type PrintFontFamily = 'mono' | 'sans';
+export type PrintFontSize = 'xs' | 'sm' | 'md';
+
+export interface PrintSettings {
+  paperSize: PrintPaperSize;
+  engineMode: PrintEngineMode;
+  fontFamily: PrintFontFamily;
+  fontSize: PrintFontSize;
+  autoPrintOnConfirm: boolean;
+  showItemSku: boolean;
+  showCashierAndCustomer: boolean;
+  marginMm: number;
+  usbVendorId?: number;
+  usbProductId?: number;
+  usbDeviceName?: string;
+  serialBaudRate: number;
+}
+
+export interface StoreSession {
+  id: string;
+  companyId: string;
+  ownerUid: string;
+  memberUids: string[];
+  sessionNumber: string;
+  branchId: string;
+  branchName: string;
+  businessDateKey: string;
+  status: 'open' | 'closed';
+  openedByStaffId: string;
+  openedByStaffName: string;
+  openedAtMs: number;
+  openingCash: number;
+  closedByStaffId: string;
+  closedByStaffName: string;
+  closedAtMs: number;
+  expectedCash: number;
+  closingCashActual: number;
+  expectedCard: number;
+  actualCard: number;
+  expectedTransfer: number;
+  actualTransfer: number;
+  varianceTotal: number;
+  salesCount: number;
+  netSalesTotal: number;
+  grossProfitTotal: number;
+  expensesTotal: number;
+  returnsTotal: number;
+  netTaxPayable: number;
+  reconciliationId: string;
+  notes: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
 export interface Company {
   id: string;
   name: string;
@@ -95,6 +151,7 @@ export interface Sale {
   branchName: string;
   staffId: string;
   staffName: string;
+  sessionId?: string;
   saleMode: SaleMode;
   customerName: string;
   customerPhone: string;
@@ -174,6 +231,7 @@ export interface Expense {
   branchName: string;
   staffId: string;
   staffName: string;
+  sessionId?: string;
   expenseType: ExpenseType;
   category: string;
   vendor: string;
@@ -208,6 +266,7 @@ export interface StockTransfer {
   toBranchName: string;
   staffId: string;
   staffName: string;
+  sessionId?: string;
   items: TransferLineItem[];
   totalQty: number;
   totalCostValue: number;
@@ -240,6 +299,7 @@ export interface StockReturn {
   branchName: string;
   staffId: string;
   staffName: string;
+  sessionId?: string;
   items: ReturnLineItem[];
   refundMethod: RefundMethod;
   refundSubtotal: number;
@@ -263,6 +323,7 @@ export interface StockTake {
   branchName: string;
   staffId: string;
   staffName: string;
+  sessionId?: string;
   actionType: StockTakeAction;
   itemsAdjusted: number;
   varianceUnits: number;
@@ -283,6 +344,7 @@ export interface Reconciliation {
   branchName: string;
   staffId: string;
   staffName: string;
+  sessionId?: string;
   dateKey: string;
   expectedCash: number;
   actualCash: number;

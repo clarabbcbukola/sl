@@ -8,9 +8,11 @@ import {
   Menu,
   Moon,
   Package,
+  Play,
   RotateCcw,
   Settings,
   ShoppingCart,
+  Square,
   Sun,
   X,
 } from 'lucide-react';
@@ -21,6 +23,7 @@ import { POSView } from './components/POSView';
 import { OfflineIndicator, PWAInstallButton } from './components/PWAComponents';
 import { ReportsView } from './components/ReportsView';
 import { ReturnsView } from './components/ReturnsView';
+import { SessionModal } from './components/SessionModal';
 import { SettingsView } from './components/SettingsView';
 import { AppProvider, useApp } from './contexts/AppContext';
 import { NavSection } from './types';
@@ -102,6 +105,7 @@ const AppShell: React.FC = () => {
     activeBranchId,
     setActiveBranchId,
     activeBranch,
+    activeSession,
     activeStaff,
     lockTerminal,
     logoutGoogle,
@@ -111,6 +115,7 @@ const AppShell: React.FC = () => {
 
   const [activeNav, setActiveNav] = useState<NavSection>('pos');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sessionModalMode, setSessionModalMode] = useState<'open' | 'close' | null>(null);
 
   // Close mobile drawer when switching nav or locking
   useEffect(() => {
@@ -281,6 +286,28 @@ const AppShell: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0">
+            {activeSession ? (
+              <button
+                type="button"
+                onClick={() => setSessionModalMode('close')}
+                title={`Active session ${activeSession.sessionNumber} (${activeSession.businessDateKey}) — Click to Close & Run EOD`}
+                className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 dark:hover:bg-emerald-900/60 whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Square className="h-3 w-3 fill-current" />
+                <span className="hidden md:inline font-mono">{activeSession.sessionNumber} ·</span>
+                <span>Close Day</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setSessionModalMode('open')}
+                title="Open a Business Day Session to tag transactions cleanly and ignore device clock lag"
+                className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300 dark:hover:bg-amber-900/60 whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Play className="h-3 w-3 fill-current" />
+                <span>Start Day</span>
+              </button>
+            )}
             <PWAInstallButton compact />
             <button
               type="button"
@@ -311,6 +338,13 @@ const AppShell: React.FC = () => {
           {activeNav === 'settings' && <SettingsView />}
         </main>
       </div>
+
+      {sessionModalMode && (
+        <SessionModal
+          initialMode={sessionModalMode}
+          onClose={() => setSessionModalMode(null)}
+        />
+      )}
     </div>
   );
 };

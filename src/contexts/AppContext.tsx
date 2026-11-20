@@ -35,6 +35,7 @@ import {
   ExpenseType,
   HeldCart,
   PaymentMethod,
+  PrintSettings,
   Product,
   Reconciliation,
   RefundMethod,
@@ -47,8 +48,9 @@ import {
   StockTake,
   StockTakeAction,
   StockTransfer,
+  StoreSession,
 } from '../types';
-import { calculateCartTotals, roundMoney } from '../utils/accounting';
+import { calculateAccountingSummary, calculateCartTotals, roundMoney } from '../utils/accounting';
 import { ParsedCSVProductRow, fetchPreloadedStockCSV } from '../utils/csv';
 import {
   clampStr,
@@ -57,6 +59,11 @@ import {
   getTodayDateKey,
   hashPin,
 } from '../utils/format';
+import {
+  DEFAULT_PRINT_SETTINGS,
+  loadPrintSettings,
+  savePrintSettings,
+} from '../utils/printer';
 
 interface AppContextValue {
   firebaseUser: User | null;
@@ -76,10 +83,14 @@ interface AppContextValue {
   returns: StockReturn[];
   stockTakes: StockTake[];
   reconciliations: Reconciliation[];
+  sessions: StoreSession[];
+  activeSession: StoreSession | null;
   activeBranchId: string;
   setActiveBranchId: (branchId: string) => void;
   activeBranch: Branch | null;
   activeStaff: StaffUser | null;
+  printSettings: PrintSettings;
+  updatePrintSettings: (patch: Partial<PrintSettings>) => void;
   // Cart state
   cart: CartItem[];
   saleMode: SaleMode;
@@ -167,6 +178,7 @@ interface AppContextValue {
   commitReconciliation: (params: {
     branchId: string;
     dateKey: string;
+    sessionId?: string;
     expectedCash: number;
     actualCash: number;
     expectedCard: number;
@@ -177,6 +189,19 @@ interface AppContextValue {
     cashExpenses: number;
     notes: string;
   }) => Promise<Reconciliation>;
+  openSession: (params: {
+    branchId: string;
+    businessDateKey: string;
+    openingCash: number;
+    notes: string;
+  }) => Promise<StoreSession>;
+  closeSession: (params: {
+    sessionId: string;
+    actualCash: number;
+    actualCard: number;
+    actualTransfer: number;
+    notes: string;
+  }) => Promise<StoreSession>;
   // Settings
   updateCompanySettings: (
     patch: Partial<
@@ -229,9 +254,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [returns, setReturns] = useState<StockReturn[]>([]);
   const [stockTakes, setStockTakes] = useState<StockTake[]>([]);
   const [reconciliations, setReconciliations] = useState<Reconciliation[]>([]);
+  const [sessions, setSessions] = useState<StoreSession[]>([]);
 
   const [activeBranchId, setActiveBranchId] = useState<string>('');
   const [activeStaff, setActiveStaff] = useState<StaffUser | null>(null);
+  const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
+    loadPrintSettings()
+  );
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [saleMode, setSaleMode] = useState<SaleMode>('retail');
@@ -307,6 +336,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setReturns([]);
         setStockTakes([]);
         setReconciliations([]);
+        setSessions([]);
         setActiveStaff(null);
       }
     });
@@ -406,6 +436,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       subscribeCol<StockReturn>('returns', setReturns, (a, b) => getTimeMs(b) - getTimeMs(a)),
       subscribeCol<StockTake>('stockTakes', setStockTakes, (a, b) => getTimeMs(b) - getTimeMs(a)),
       subscribeCol<Reconciliation>('reconciliations', setReconciliations, (a, b) => getTimeMs(b) - getTimeMs(a)),
+      subscribeCol<StoreSession>('sessions', setSessions, (a, b) => (b.openedAtMs || getTimeMs(b)) - (a.openedAtMs || getTimeMs(a))),
     ];
 
     return () => {
@@ -437,6 +468,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const activeBranch = useMemo(
     () => branches.find((b) => b.id === activeBranchId) || branches[0] || null,
     [branches, activeBranchId]
+  );
+
+  const activeSession = useMemo(() => {
+    if (!activeBranch) return sessions.find((s) => s.status === 'open') || null;
+    return sessions.find((s) => s.status === 'open' && s.branchId === activeBranch.id) || null;
+  }, [sessions, activeBranch]);
+
+  useEffect(() => {
+    setPrintSettings(loadPrintSettings(company?.id));
+  }, [company?.id]);
+
+  const updatePrintSettings = useCallback(
+    (patch: Partial<PrintSettings>) => {
+      setPrintSettings((prev) => {
+        const next: PrintSettings = {
+          ...DEFAULT_PRINT_SETTINGS,
+          ...prev,
+          ...patch,
+        };
+        savePrintSettings(company?.id, next);
+        return next;
+      });
+    },
+    [company?.id]
   );
 
   const signInWithGoogle = useCallback(async () => {
@@ -732,7 +787,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const totals = calculateCartTotals(lineItems, cartDiscountPct, company);
       const saleId = generateId('sale');
       const trackingNumber = generateTrackingNumber('TRX');
-      const dateKey = getTodayDateKey();
+      const dateKey = activeSession?.businessDateKey || getTodayDateKey();
       const amountTendered = Math.max(0, Number(params.amountTendered) || totals.total);
       const changeDue =
         params.paymentMethod === 'cash'
@@ -749,6 +804,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         branchName: activeBranch.name,
         staffId: activeStaff.id,
         staffName: activeStaff.name,
+        sessionId: activeSession?.id || '',
         saleMode,
         customerName: clampStr(params.customerName, 120),
         customerPhone: clampStr(params.customerPhone, 40),
@@ -798,7 +854,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       clearCart();
       return saleDoc;
     },
-    [company, activeBranch, activeStaff, cart, saleMode, cartDiscountPct, products, activeHeldCartId, clearCart, commitOfflineSafe]
+    [company, activeBranch, activeStaff, activeSession, cart, saleMode, cartDiscountPct, products, activeHeldCartId, clearCart, commitOfflineSafe]
   );
 
   const holdCurrentCart = useCallback(
@@ -1060,7 +1116,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const transferId = generateId('trf');
       const trackingNumber = generateTrackingNumber('TRF');
-      const dateKey = getTodayDateKey();
+      const dateKey = activeSession?.businessDateKey || getTodayDateKey();
 
       let totalQty = 0;
       let totalCostValue = 0;
@@ -1088,6 +1144,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toBranchName: toBranch.name,
         staffId: activeStaff.id,
         staffName: activeStaff.name,
+        sessionId: activeSession?.id || '',
         items: transferLines,
         totalQty: roundMoney(totalQty),
         totalCostValue: roundMoney(totalCostValue),
@@ -1156,7 +1213,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return transferDoc;
     },
-    [company, activeStaff, branches, products, commitOfflineSafe]
+    [company, activeStaff, activeSession, branches, products, commitOfflineSafe]
   );
 
   const commitStockTake = useCallback(
@@ -1180,7 +1237,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const stockTakeId = generateId('stk');
       const trackingNumber = generateTrackingNumber('STK');
-      const dateKey = getTodayDateKey();
+      const dateKey = activeSession?.businessDateKey || getTodayDateKey();
 
       const stockTakeDoc: StockTake = {
         id: stockTakeId,
@@ -1192,6 +1249,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         branchName: branch.name,
         staffId: activeStaff.id,
         staffName: activeStaff.name,
+        sessionId: activeSession?.id || '',
         actionType: params.actionType,
         itemsAdjusted: params.adjustments.length,
         varianceUnits: roundMoney(varianceUnits),
@@ -1238,7 +1296,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return stockTakeDoc;
     },
-    [company, activeStaff, branches, commitOfflineSafe]
+    [company, activeStaff, activeSession, branches, commitOfflineSafe]
   );
 
   const processStockReturn = useCallback(
@@ -1295,7 +1353,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const returnId = generateId('ret');
       const trackingNumber = generateTrackingNumber('RET');
-      const dateKey = getTodayDateKey();
+      const dateKey = activeSession?.businessDateKey || getTodayDateKey();
 
       const returnDoc: StockReturn = {
         id: returnId,
@@ -1309,6 +1367,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         branchName: params.sale.branchName,
         staffId: activeStaff.id,
         staffName: activeStaff.name,
+        sessionId: activeSession?.id || params.sale.sessionId || '',
         items: returnLines,
         refundMethod: params.refundMethod,
         refundSubtotal: roundMoney(refundSubtotal),
@@ -1354,7 +1413,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return returnDoc;
     },
-    [company, activeStaff, products, commitOfflineSafe]
+    [company, activeStaff, activeSession, products, commitOfflineSafe]
   );
 
   const recordExpense = useCallback(
@@ -1375,7 +1434,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const expenseId = generateId('exp');
       const trackingNumber = generateTrackingNumber('EXP');
-      const dateKey = getTodayDateKey();
+      const dateKey = activeSession?.businessDateKey || getTodayDateKey();
 
       const items: ExpenseLineItem[] = (params.purchaseItems || []).map(({ product, qty, unitCost }) => ({
         productId: product.id,
@@ -1400,6 +1459,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         branchName: branch.name,
         staffId: activeStaff.id,
         staffName: activeStaff.name,
+        sessionId: activeSession?.id || '',
         expenseType: params.expenseType,
         category: clampStr(params.category, 80) || 'General',
         vendor: clampStr(params.vendor, 120),
@@ -1437,13 +1497,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return expenseDoc;
     },
-    [company, activeStaff, branches, activeBranch, commitOfflineSafe]
+    [company, activeStaff, activeSession, branches, activeBranch, commitOfflineSafe]
   );
 
   const commitReconciliation = useCallback(
     async (params: {
       branchId: string;
       dateKey: string;
+      sessionId?: string;
       expectedCash: number;
       actualCash: number;
       expectedCard: number;
@@ -1475,6 +1536,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         branchName: branch.name,
         staffId: activeStaff.id,
         staffName: activeStaff.name,
+        sessionId: params.sessionId ?? activeSession?.id ?? '',
         dateKey: params.dateKey,
         expectedCash: roundMoney(params.expectedCash),
         actualCash: roundMoney(params.actualCash),
@@ -1501,7 +1563,205 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return recDoc;
     },
-    [company, activeStaff, branches, activeBranch, commitOfflineSafe]
+    [company, activeStaff, activeSession, branches, activeBranch, commitOfflineSafe]
+  );
+
+  const openSession = useCallback(
+    async (params: {
+      branchId: string;
+      businessDateKey: string;
+      openingCash: number;
+      notes: string;
+    }): Promise<StoreSession> => {
+      if (!company || !activeStaff) throw new Error('Active staff login required');
+      const branch = branches.find((b) => b.id === params.branchId) || activeBranch;
+      if (!branch) throw new Error('Branch not found');
+
+      const alreadyOpen = sessions.find(
+        (s) => s.status === 'open' && s.branchId === branch.id
+      );
+      if (alreadyOpen) {
+        return alreadyOpen;
+      }
+
+      const sessionId = generateId('ses');
+      const sessionNumber = generateTrackingNumber('SES');
+      const openingCash = roundMoney(Math.max(0, Number(params.openingCash) || 0));
+
+      const sessionDoc: StoreSession = {
+        id: sessionId,
+        companyId: company.id,
+        ownerUid: company.ownerUid,
+        memberUids: company.memberUids,
+        sessionNumber,
+        branchId: branch.id,
+        branchName: branch.name,
+        businessDateKey: params.businessDateKey || getTodayDateKey(),
+        status: 'open',
+        openedByStaffId: activeStaff.id,
+        openedByStaffName: activeStaff.name,
+        openedAtMs: Date.now(),
+        openingCash,
+        closedByStaffId: '',
+        closedByStaffName: '',
+        closedAtMs: 0,
+        expectedCash: openingCash,
+        closingCashActual: 0,
+        expectedCard: 0,
+        actualCard: 0,
+        expectedTransfer: 0,
+        actualTransfer: 0,
+        varianceTotal: 0,
+        salesCount: 0,
+        netSalesTotal: 0,
+        grossProfitTotal: 0,
+        expensesTotal: 0,
+        returnsTotal: 0,
+        netTaxPayable: 0,
+        reconciliationId: '',
+        notes: clampStr(params.notes, 300),
+      };
+
+      await commitOfflineSafe(
+        setDoc(doc(db, 'companies', company.id, 'sessions', sessionId), {
+          ...sessionDoc,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }),
+        OperationType.CREATE,
+        `companies/${company.id}/sessions/${sessionId}`
+      );
+
+      return sessionDoc;
+    },
+    [company, activeStaff, branches, activeBranch, sessions, commitOfflineSafe]
+  );
+
+  const closeSession = useCallback(
+    async (params: {
+      sessionId: string;
+      actualCash: number;
+      actualCard: number;
+      actualTransfer: number;
+      notes: string;
+    }): Promise<StoreSession> => {
+      if (!company || !activeStaff) throw new Error('Active staff login required');
+      const target = sessions.find((s) => s.id === params.sessionId && s.status === 'open');
+      if (!target) throw new Error('Open session not found');
+
+      const sSales = sales.filter((s) => s.sessionId === target.id);
+      const sReturns = returns.filter((r) => r.sessionId === target.id);
+      const sExpenses = expenses.filter((e) => e.sessionId === target.id);
+      const acc = calculateAccountingSummary(sSales, sReturns, sExpenses);
+
+      const expectedCash = roundMoney(
+        target.openingCash +
+          acc.paymentBreakdown.cash -
+          acc.cashOutflows.cashRefunds -
+          acc.cashOutflows.cashExpenses
+      );
+      const expectedCard = roundMoney(acc.paymentBreakdown.card);
+      const expectedTransfer = roundMoney(acc.paymentBreakdown.transfer);
+
+      const actualCash = roundMoney(Math.max(0, Number(params.actualCash) || 0));
+      const actualCard = roundMoney(Math.max(0, Number(params.actualCard) || 0));
+      const actualTransfer = roundMoney(Math.max(0, Number(params.actualTransfer) || 0));
+
+      const expectedTotal = expectedCash + expectedCard + expectedTransfer;
+      const actualTotal = actualCash + actualCard + actualTransfer;
+      const varianceTotal = roundMoney(actualTotal - expectedTotal);
+
+      const recId = generateId('rec');
+      const recTracking = generateTrackingNumber('REC');
+      const closedAtMs = Date.now();
+      const notes = clampStr(params.notes || target.notes, 300);
+
+      const recDoc: Reconciliation = {
+        id: recId,
+        companyId: company.id,
+        ownerUid: company.ownerUid,
+        memberUids: company.memberUids,
+        trackingNumber: recTracking,
+        branchId: target.branchId,
+        branchName: target.branchName,
+        staffId: activeStaff.id,
+        staffName: activeStaff.name,
+        sessionId: target.id,
+        dateKey: target.businessDateKey,
+        expectedCash,
+        actualCash,
+        expectedCard,
+        actualCard,
+        expectedTransfer,
+        actualTransfer,
+        cashRefunds: acc.cashOutflows.cashRefunds,
+        cashExpenses: acc.cashOutflows.cashExpenses,
+        varianceTotal,
+        status: Math.abs(varianceTotal) < 0.01 ? 'balanced' : 'variance_noted',
+        notes: notes || `Closed session ${target.sessionNumber}`,
+      };
+
+      const closedSession: StoreSession = {
+        ...target,
+        status: 'closed',
+        closedByStaffId: activeStaff.id,
+        closedByStaffName: activeStaff.name,
+        closedAtMs,
+        expectedCash,
+        closingCashActual: actualCash,
+        expectedCard,
+        actualCard,
+        expectedTransfer,
+        actualTransfer,
+        varianceTotal,
+        salesCount: acc.salesCount,
+        netSalesTotal: acc.netSalesRevenue,
+        grossProfitTotal: acc.grossProfit,
+        expensesTotal: acc.totalExpenses,
+        returnsTotal: acc.totalReturns,
+        netTaxPayable: acc.netTaxPayable,
+        reconciliationId: recId,
+        notes,
+      };
+
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'companies', company.id, 'reconciliations', recId), {
+        ...recDoc,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      batch.update(doc(db, 'companies', company.id, 'sessions', target.id), {
+        status: 'closed',
+        closedByStaffId: activeStaff.id,
+        closedByStaffName: activeStaff.name,
+        closedAtMs,
+        expectedCash,
+        closingCashActual: actualCash,
+        expectedCard,
+        actualCard,
+        expectedTransfer,
+        actualTransfer,
+        varianceTotal,
+        salesCount: acc.salesCount,
+        netSalesTotal: acc.netSalesRevenue,
+        grossProfitTotal: acc.grossProfit,
+        expensesTotal: acc.totalExpenses,
+        returnsTotal: acc.totalReturns,
+        netTaxPayable: acc.netTaxPayable,
+        reconciliationId: recId,
+        notes,
+        updatedAt: serverTimestamp(),
+      });
+
+      await commitOfflineSafe(
+        batch.commit(),
+        OperationType.WRITE,
+        `companies/${company.id}/sessions/${target.id}`
+      );
+
+      return closedSession;
+    },
+    [company, activeStaff, sessions, sales, returns, expenses, commitOfflineSafe]
   );
 
   const updateCompanySettings = useCallback(
@@ -1655,10 +1915,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     returns,
     stockTakes,
     reconciliations,
+    sessions,
+    activeSession,
     activeBranchId,
     setActiveBranchId,
     activeBranch,
     activeStaff,
+    printSettings,
+    updatePrintSettings,
     cart,
     saleMode,
     setSaleMode,
@@ -1688,6 +1952,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     processStockReturn,
     recordExpense,
     commitReconciliation,
+    openSession,
+    closeSession,
     updateCompanySettings,
     createBranch,
     updateBranch,

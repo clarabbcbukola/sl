@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+dev-dist/
+*.bak
+firestore.rules.merged
+merge-firestore-rules.ps1

@@ -84,6 +84,15 @@ service cloud.firestore {
     // -------------------------------------------------------------------------
     // Entity Validation Blueprints
     // -------------------------------------------------------------------------
+    function hasValidOptionalSessionId(data) {
+      return !('sessionId' in data) || (data.sessionId is string && data.sessionId.size() <= 128);
+    }
+
+
+    function hasCurrentCompanyMembers(data, companyId) {
+      return companyExists(companyId)
+        && data.memberUids == getCompany(companyId).data.memberUids;
+    }
     function isValidCompany(data) {
       return data.keys().hasAll([
           'id', 'name', 'currency', 'taxRate', 'taxInclusive', 'wholesaleDiscountPct',
@@ -173,14 +182,14 @@ service cloud.firestore {
 
     function isValidSale(data) {
       return data.keys().hasAll([
-          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'branchId',
+          'id', 'companyId', 'ownerUid', 'memberUids', 'sessionId', 'trackingNumber', 'branchId',
           'branchName', 'staffId', 'staffName', 'saleMode', 'customerName', 'customerPhone',
           'paymentMethod', 'items', 'subtotal', 'discountAmount', 'taxAmount', 'total',
           'totalCost', 'amountTendered', 'changeDue', 'returnedAmount', 'status',
           'notes', 'dateKey', 'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'branchId',
+          'id', 'companyId', 'ownerUid', 'memberUids', 'sessionId', 'trackingNumber', 'branchId',
           'branchName', 'staffId', 'staffName', 'saleMode', 'customerName', 'customerPhone',
           'paymentMethod', 'items', 'subtotal', 'discountAmount', 'taxAmount', 'total',
           'totalCost', 'amountTendered', 'changeDue', 'returnedAmount', 'status',
@@ -206,7 +215,7 @@ service cloud.firestore {
         && data.returnedAmount is number && data.returnedAmount >= 0
         && data.status is string && data.status in ['completed', 'partial_return', 'refunded']
         && data.notes is string && data.notes.size() <= 300
-        && data.dateKey is string && data.dateKey.size() == 10;
+        && data.dateKey is string && data.dateKey.size() == 10 && hasValidOptionalSessionId(data);
     }
 
     function isValidHeldCart(data) {
@@ -233,13 +242,13 @@ service cloud.firestore {
 
     function isValidExpense(data) {
       return data.keys().hasAll([
-          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'branchId',
+          'id', 'companyId', 'ownerUid', 'memberUids', 'sessionId', 'trackingNumber', 'branchId',
           'branchName', 'staffId', 'staffName', 'expenseType', 'category', 'vendor',
           'description', 'paymentMethod', 'amount', 'taxAmount', 'totalAmount',
           'items', 'dateKey', 'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'branchId',
+          'id', 'companyId', 'ownerUid', 'memberUids', 'sessionId', 'trackingNumber', 'branchId',
           'branchName', 'staffId', 'staffName', 'expenseType', 'category', 'vendor',
           'description', 'paymentMethod', 'amount', 'taxAmount', 'totalAmount',
           'items', 'dateKey', 'createdAt', 'updatedAt'
@@ -258,18 +267,18 @@ service cloud.firestore {
         && data.taxAmount is number && data.taxAmount >= 0
         && data.totalAmount is number && data.totalAmount >= 0
         && data.items is list && data.items.size() <= 200 && (data.items.size() == 0 || data.items[0] is map)
-        && data.dateKey is string && data.dateKey.size() == 10;
+        && data.dateKey is string && data.dateKey.size() == 10 && hasValidOptionalSessionId(data);
     }
 
     function isValidStockTransfer(data) {
       return data.keys().hasAll([
-          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'fromBranchId',
+          'id', 'companyId', 'ownerUid', 'memberUids', 'sessionId', 'trackingNumber', 'fromBranchId',
           'fromBranchName', 'toBranchId', 'toBranchName', 'staffId', 'staffName',
           'items', 'totalQty', 'totalCostValue', 'status', 'notes', 'dateKey',
           'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'fromBranchId',
+          'id', 'companyId', 'ownerUid', 'memberUids', 'sessionId', 'trackingNumber', 'fromBranchId',
           'fromBranchName', 'toBranchId', 'toBranchName', 'staffId', 'staffName',
           'items', 'totalQty', 'totalCostValue', 'status', 'notes', 'dateKey',
           'createdAt', 'updatedAt'
@@ -287,18 +296,18 @@ service cloud.firestore {
         && data.totalCostValue is number && data.totalCostValue >= 0
         && data.status is string && data.status in ['completed', 'cancelled']
         && data.notes is string && data.notes.size() <= 300
-        && data.dateKey is string && data.dateKey.size() == 10;
+        && data.dateKey is string && data.dateKey.size() == 10 && hasValidOptionalSessionId(data);
     }
 
     function isValidStockReturn(data) {
       return data.keys().hasAll([
-          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'saleId',
+          'id', 'companyId', 'ownerUid', 'memberUids', 'sessionId', 'trackingNumber', 'saleId',
           'saleTrackingNumber', 'branchId', 'branchName', 'staffId', 'staffName',
           'items', 'refundMethod', 'refundSubtotal', 'refundTax', 'refundTotal',
           'refundCost', 'restockItems', 'reason', 'dateKey', 'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'saleId',
+          'id', 'companyId', 'ownerUid', 'memberUids', 'sessionId', 'trackingNumber', 'saleId',
           'saleTrackingNumber', 'branchId', 'branchName', 'staffId', 'staffName',
           'items', 'refundMethod', 'refundSubtotal', 'refundTax', 'refundTotal',
           'refundCost', 'restockItems', 'reason', 'dateKey', 'createdAt', 'updatedAt'
@@ -318,17 +327,17 @@ service cloud.firestore {
         && data.refundCost is number && data.refundCost >= 0
         && data.restockItems is bool
         && data.reason is string && data.reason.size() >= 1 && data.reason.size() <= 300
-        && data.dateKey is string && data.dateKey.size() == 10;
+        && data.dateKey is string && data.dateKey.size() == 10 && hasValidOptionalSessionId(data);
     }
 
     function isValidStockTake(data) {
       return data.keys().hasAll([
-          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'branchId',
+          'id', 'companyId', 'ownerUid', 'memberUids', 'sessionId', 'trackingNumber', 'branchId',
           'branchName', 'staffId', 'staffName', 'actionType', 'itemsAdjusted',
           'varianceUnits', 'varianceCostValue', 'notes', 'dateKey', 'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'branchId',
+          'id', 'companyId', 'ownerUid', 'memberUids', 'sessionId', 'trackingNumber', 'branchId',
           'branchName', 'staffId', 'staffName', 'actionType', 'itemsAdjusted',
           'varianceUnits', 'varianceCostValue', 'notes', 'dateKey', 'createdAt', 'updatedAt'
         ])
@@ -342,19 +351,19 @@ service cloud.firestore {
         && data.varianceUnits is number
         && data.varianceCostValue is number
         && data.notes is string && data.notes.size() <= 300
-        && data.dateKey is string && data.dateKey.size() == 10;
+        && data.dateKey is string && data.dateKey.size() == 10 && hasValidOptionalSessionId(data);
     }
 
     function isValidReconciliation(data) {
       return data.keys().hasAll([
-          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'branchId',
+          'id', 'companyId', 'ownerUid', 'memberUids', 'sessionId', 'trackingNumber', 'branchId',
           'branchName', 'staffId', 'staffName', 'dateKey', 'expectedCash', 'actualCash',
           'expectedCard', 'actualCard', 'expectedTransfer', 'actualTransfer',
           'cashRefunds', 'cashExpenses', 'varianceTotal', 'status', 'notes',
           'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'id', 'companyId', 'ownerUid', 'memberUids', 'trackingNumber', 'branchId',
+          'id', 'companyId', 'ownerUid', 'memberUids', 'sessionId', 'trackingNumber', 'branchId',
           'branchName', 'staffId', 'staffName', 'dateKey', 'expectedCash', 'actualCash',
           'expectedCard', 'actualCard', 'expectedTransfer', 'actualTransfer',
           'cashRefunds', 'cashExpenses', 'varianceTotal', 'status', 'notes',
@@ -376,10 +385,58 @@ service cloud.firestore {
         && data.cashExpenses is number && data.cashExpenses >= 0
         && data.varianceTotal is number
         && data.status is string && data.status in ['balanced', 'variance_noted']
-        && data.notes is string && data.notes.size() <= 300;
+        && data.notes is string && data.notes.size() <= 300 && hasValidOptionalSessionId(data);
     }
 
     // -------------------------------------------------------------------------
+    function isValidStoreSession(data) {
+      return data.keys().hasAll([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'sessionNumber', 'branchId',
+          'branchName', 'businessDateKey', 'status', 'openedByStaffId', 'openedByStaffName',
+          'openedAtMs', 'openingCash', 'closedByStaffId', 'closedByStaffName', 'closedAtMs',
+          'expectedCash', 'closingCashActual', 'expectedCard', 'actualCard',
+          'expectedTransfer', 'actualTransfer', 'varianceTotal', 'salesCount',
+          'netSalesTotal', 'grossProfitTotal', 'expensesTotal', 'returnsTotal',
+          'netTaxPayable', 'reconciliationId', 'notes', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'companyId', 'ownerUid', 'memberUids', 'sessionNumber', 'branchId',
+          'branchName', 'businessDateKey', 'status', 'openedByStaffId', 'openedByStaffName',
+          'openedAtMs', 'openingCash', 'closedByStaffId', 'closedByStaffName', 'closedAtMs',
+          'expectedCash', 'closingCashActual', 'expectedCard', 'actualCard',
+          'expectedTransfer', 'actualTransfer', 'varianceTotal', 'salesCount',
+          'netSalesTotal', 'grossProfitTotal', 'expensesTotal', 'returnsTotal',
+          'netTaxPayable', 'reconciliationId', 'notes', 'createdAt', 'updatedAt'
+        ])
+        && data.sessionNumber is string && data.sessionNumber.size() >= 1 && data.sessionNumber.size() <= 64
+        && data.branchId is string && data.branchId.size() >= 1 && data.branchId.size() <= 128
+        && data.branchName is string && data.branchName.size() >= 1 && data.branchName.size() <= 80
+        && data.businessDateKey is string && data.businessDateKey.size() == 10
+        && data.status is string && data.status in ['open', 'closed']
+        && data.openedByStaffId is string && data.openedByStaffId.size() >= 1 && data.openedByStaffId.size() <= 128
+        && data.openedByStaffName is string && data.openedByStaffName.size() >= 1 && data.openedByStaffName.size() <= 80
+        && data.openedAtMs is number && data.openedAtMs > 0
+        && data.openingCash is number && data.openingCash >= 0
+        && data.closedByStaffId is string && data.closedByStaffId.size() <= 128
+        && data.closedByStaffName is string && data.closedByStaffName.size() <= 80
+        && data.closedAtMs is number && data.closedAtMs >= 0
+        && data.expectedCash is number
+        && data.closingCashActual is number && data.closingCashActual >= 0
+        && data.expectedCard is number
+        && data.actualCard is number && data.actualCard >= 0
+        && data.expectedTransfer is number
+        && data.actualTransfer is number && data.actualTransfer >= 0
+        && data.varianceTotal is number
+        && data.salesCount is number && data.salesCount >= 0
+        && data.netSalesTotal is number
+        && data.grossProfitTotal is number
+        && data.expensesTotal is number && data.expensesTotal >= 0
+        && data.returnsTotal is number && data.returnsTotal >= 0
+        && data.netTaxPayable is number
+        && data.reconciliationId is string && data.reconciliationId.size() <= 128
+        && data.notes is string && data.notes.size() <= 300;
+    }
+
     // Collection Match Rules
     // -------------------------------------------------------------------------
     match /companies/{companyId} {
@@ -409,10 +466,11 @@ service cloud.firestore {
 
       match /branches/{branchId} {
         allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(branchId) && isCompanyMember(companyId);
-        allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+        allow list: if isSignedIn() && isVerified() && isCompanyMember(companyId) && request.auth.uid in resource.data.memberUids;
         allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(branchId)
           && isValidBranch(incoming()) && hasValidTenantHeader(incoming(), branchId, companyId)
           && isCompanyMember(companyId)
+          && hasCurrentCompanyMembers(incoming(), companyId)
           && incoming().ownerUid == getCompany(companyId).data.ownerUid
           && incoming().createdAt == request.time && incoming().updatedAt == request.time;
         allow update: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(branchId)
@@ -427,10 +485,11 @@ service cloud.firestore {
 
       match /staff/{staffId} {
         allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(staffId) && isCompanyMember(companyId);
-        allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+        allow list: if isSignedIn() && isVerified() && isCompanyMember(companyId) && request.auth.uid in resource.data.memberUids;
         allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(staffId)
           && isValidStaffUser(incoming()) && hasValidTenantHeader(incoming(), staffId, companyId)
           && isCompanyMember(companyId)
+          && hasCurrentCompanyMembers(incoming(), companyId)
           && incoming().ownerUid == getCompany(companyId).data.ownerUid
           && incoming().createdAt == request.time && incoming().updatedAt == request.time;
         allow update: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(staffId)
@@ -445,10 +504,11 @@ service cloud.firestore {
 
       match /products/{productId} {
         allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(productId) && isCompanyMember(companyId);
-        allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+        allow list: if isSignedIn() && isVerified() && isCompanyMember(companyId) && request.auth.uid in resource.data.memberUids;
         allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(productId)
           && isValidProduct(incoming()) && hasValidTenantHeader(incoming(), productId, companyId)
           && isCompanyMember(companyId)
+          && hasCurrentCompanyMembers(incoming(), companyId)
           && incoming().ownerUid == getCompany(companyId).data.ownerUid
           && incoming().createdAt == request.time && incoming().updatedAt == request.time;
         allow update: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(productId)
@@ -468,10 +528,11 @@ service cloud.firestore {
 
       match /sales/{saleId} {
         allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(saleId) && isCompanyMember(companyId);
-        allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+        allow list: if isSignedIn() && isVerified() && isCompanyMember(companyId) && request.auth.uid in resource.data.memberUids;
         allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(saleId)
           && isValidSale(incoming()) && hasValidTenantHeader(incoming(), saleId, companyId)
           && isCompanyMember(companyId)
+          && hasCurrentCompanyMembers(incoming(), companyId)
           && incoming().ownerUid == getCompany(companyId).data.ownerUid
           && incoming().status == 'completed'
           && incoming().returnedAmount == 0
@@ -490,10 +551,11 @@ service cloud.firestore {
 
       match /heldCarts/{cartId} {
         allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(cartId) && isCompanyMember(companyId);
-        allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+        allow list: if isSignedIn() && isVerified() && isCompanyMember(companyId) && request.auth.uid in resource.data.memberUids;
         allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(cartId)
           && isValidHeldCart(incoming()) && hasValidTenantHeader(incoming(), cartId, companyId)
           && isCompanyMember(companyId)
+          && hasCurrentCompanyMembers(incoming(), companyId)
           && incoming().ownerUid == getCompany(companyId).data.ownerUid
           && incoming().createdAt == request.time && incoming().updatedAt == request.time;
         allow update: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(cartId)
@@ -505,10 +567,11 @@ service cloud.firestore {
 
       match /expenses/{expenseId} {
         allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(expenseId) && isCompanyMember(companyId);
-        allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+        allow list: if isSignedIn() && isVerified() && isCompanyMember(companyId) && request.auth.uid in resource.data.memberUids;
         allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(expenseId)
           && isValidExpense(incoming()) && hasValidTenantHeader(incoming(), expenseId, companyId)
           && isCompanyMember(companyId)
+          && hasCurrentCompanyMembers(incoming(), companyId)
           && incoming().ownerUid == getCompany(companyId).data.ownerUid
           && incoming().createdAt == request.time && incoming().updatedAt == request.time;
         allow update: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(expenseId)
@@ -520,10 +583,11 @@ service cloud.firestore {
 
       match /transfers/{transferId} {
         allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(transferId) && isCompanyMember(companyId);
-        allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+        allow list: if isSignedIn() && isVerified() && isCompanyMember(companyId) && request.auth.uid in resource.data.memberUids;
         allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(transferId)
           && isValidStockTransfer(incoming()) && hasValidTenantHeader(incoming(), transferId, companyId)
           && isCompanyMember(companyId)
+          && hasCurrentCompanyMembers(incoming(), companyId)
           && incoming().ownerUid == getCompany(companyId).data.ownerUid
           && incoming().status == 'completed'
           && incoming().createdAt == request.time && incoming().updatedAt == request.time;
@@ -540,10 +604,11 @@ service cloud.firestore {
 
       match /returns/{returnId} {
         allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(returnId) && isCompanyMember(companyId);
-        allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+        allow list: if isSignedIn() && isVerified() && isCompanyMember(companyId) && request.auth.uid in resource.data.memberUids;
         allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(returnId)
           && isValidStockReturn(incoming()) && hasValidTenantHeader(incoming(), returnId, companyId)
           && isCompanyMember(companyId)
+          && hasCurrentCompanyMembers(incoming(), companyId)
           && incoming().ownerUid == getCompany(companyId).data.ownerUid
           && exists(/databases/$(database)/documents/companies/$(companyId)/sales/$(incoming().saleId))
           && incoming().createdAt == request.time && incoming().updatedAt == request.time;
@@ -556,10 +621,11 @@ service cloud.firestore {
 
       match /stockTakes/{stockTakeId} {
         allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(stockTakeId) && isCompanyMember(companyId);
-        allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+        allow list: if isSignedIn() && isVerified() && isCompanyMember(companyId) && request.auth.uid in resource.data.memberUids;
         allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(stockTakeId)
           && isValidStockTake(incoming()) && hasValidTenantHeader(incoming(), stockTakeId, companyId)
           && isCompanyMember(companyId)
+          && hasCurrentCompanyMembers(incoming(), companyId)
           && incoming().ownerUid == getCompany(companyId).data.ownerUid
           && incoming().createdAt == request.time && incoming().updatedAt == request.time;
         allow update: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(stockTakeId)
@@ -571,16 +637,48 @@ service cloud.firestore {
 
       match /reconciliations/{reconciliationId} {
         allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(reconciliationId) && isCompanyMember(companyId);
-        allow list: if isSignedIn() && isVerified() && request.auth.uid in resource.data.memberUids;
+        allow list: if isSignedIn() && isVerified() && isCompanyMember(companyId) && request.auth.uid in resource.data.memberUids;
         allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(reconciliationId)
           && isValidReconciliation(incoming()) && hasValidTenantHeader(incoming(), reconciliationId, companyId)
           && isCompanyMember(companyId)
+          && hasCurrentCompanyMembers(incoming(), companyId)
           && incoming().ownerUid == getCompany(companyId).data.ownerUid
           && incoming().createdAt == request.time && incoming().updatedAt == request.time;
         allow update: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(reconciliationId)
           && isValidReconciliation(incoming()) && hasValidTenantHeader(incoming(), reconciliationId, companyId)
           && isCompanyOwner(companyId) && preservesTenantImmutables()
           && incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']);
+        allow delete: if false;
+      }
+match /sessions/{sessionId} {
+        allow get: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(sessionId) && isCompanyMember(companyId);
+        allow list: if isSignedIn() && isVerified() && isCompanyMember(companyId) && request.auth.uid in resource.data.memberUids;
+        allow create: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(sessionId)
+          && isValidStoreSession(incoming()) && hasValidTenantHeader(incoming(), sessionId, companyId)
+          && isCompanyMember(companyId)
+          && hasCurrentCompanyMembers(incoming(), companyId)
+          && incoming().ownerUid == getCompany(companyId).data.ownerUid
+          && incoming().status == 'open'
+          && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+        allow update: if isSignedIn() && isVerified() && isValidId(companyId) && isValidId(sessionId)
+          && isValidStoreSession(incoming()) && hasValidTenantHeader(incoming(), sessionId, companyId)
+          && isCompanyMember(companyId) && preservesTenantImmutables()
+          && (
+            (existing().status == 'open'
+              && incoming().status == 'closed'
+              && incoming().openedAtMs == existing().openedAtMs
+              && incoming().openingCash == existing().openingCash
+              && incoming().sessionNumber == existing().sessionNumber
+              && incoming().branchId == existing().branchId
+              && incoming().diff(existing()).affectedKeys().hasOnly([
+                'status', 'closedByStaffId', 'closedByStaffName', 'closedAtMs',
+                'expectedCash', 'closingCashActual', 'expectedCard', 'actualCard',
+                'expectedTransfer', 'actualTransfer', 'varianceTotal', 'salesCount',
+                'netSalesTotal', 'grossProfitTotal', 'expensesTotal', 'returnsTotal',
+                'netTaxPayable', 'reconciliationId', 'notes', 'updatedAt'
+              ])) ||
+            (isCompanyOwner(companyId) && hasCurrentCompanyMembers(incoming(), companyId) && incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']))
+          );
         allow delete: if false;
       }
     }

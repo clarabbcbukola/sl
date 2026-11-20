@@ -8,27 +8,31 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Download, Eye, FileSpreadsheet, Printer } from 'lucide-react';
+import { Clock, Download, Eye, FileSpreadsheet, Play, Printer } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
-import { Sale } from '../types';
+import { Sale, StoreSession } from '../types';
 import { calculateAccountingSummary, calculateInventoryValuation } from '../utils/accounting';
 import { downloadCSVFile, exportRowsToCSV } from '../utils/csv';
 import {
   formatCurrency,
+  formatDateTimeMs,
   formatNumber,
   formatTimestamp,
   getDateKeyOffset,
   getTodayDateKey,
 } from '../utils/format';
 import { ReceiptModal } from './ReceiptModal';
+import { SessionModal } from './SessionModal';
 
-type DatePreset = 'today' | 'yesterday' | '7d' | '30d' | 'all' | 'custom';
+type DatePreset = 'active_session' | 'session' | 'today' | 'yesterday' | '7d' | '30d' | 'all' | 'custom';
 
 export const ReportsView: React.FC = () => {
   const {
     company,
     branches,
     activeBranch,
+    activeSession,
+    sessions,
     products,
     sales,
     returns,
@@ -39,7 +43,10 @@ export const ReportsView: React.FC = () => {
 
   const cur = company?.currency || '₦';
 
-  const [datePreset, setDatePreset] = useState<DatePreset>('today');
+  const [datePreset, setDatePreset] = useState<DatePreset>(activeSession ? 'active_session' : 'today');
+  const [selectedSessionId, setSelectedSessionId] = useState<string>(
+    activeSession?.id || sessions[0]?.id || ''
+  );
   const [startDate, setStartDate] = useState(getTodayDateKey());
   const [endDate, setEndDate] = useState(getTodayDateKey());
   const [branchFilter, setBranchFilter] = useState<string>(activeBranch?.id || 'all');
@@ -49,6 +56,18 @@ export const ReportsView: React.FC = () => {
     'default' | 'sales' | 'valuation' | 'tax_expenses' | 'audit'
   >('default');
   const [previewSale, setPreviewSale] = useState<Sale | null>(null);
+  const [sessionModalState, setSessionModalState] = useState<{
+    mode: 'open' | 'close' | 'eod_report';
+    session?: StoreSession | null;
+  } | null>(null);
+
+  const effectiveSession = useMemo(() => {
+    if (datePreset === 'active_session') return activeSession;
+    if (datePreset === 'session') {
+      return sessions.find((s) => s.id === selectedSessionId) || sessions[0] || null;
+    }
+    return null;
+  }, [datePreset, activeSession, sessions, selectedSessionId]);
 
   const effectiveRange = useMemo(() => {
     const today = getTodayDateKey();
@@ -63,46 +82,51 @@ export const ReportsView: React.FC = () => {
     return { from: '0000-00-00', to: '9999-99-99' };
   }, [datePreset, startDate, endDate]);
 
-  const inRange = (dateKey: string) =>
-    dateKey >= effectiveRange.from && dateKey <= effectiveRange.to;
+  const matchesScope = (item: { dateKey: string; sessionId?: string }) => {
+    if (datePreset === 'active_session' || datePreset === 'session') {
+      if (!effectiveSession) return false;
+      return item.sessionId === effectiveSession.id;
+    }
+    return item.dateKey >= effectiveRange.from && item.dateKey <= effectiveRange.to;
+  };
 
   const filteredSales = useMemo(() => {
     return sales.filter((s) => {
       if (branchFilter !== 'all' && s.branchId !== branchFilter) return false;
       if (saleModeFilter !== 'all' && s.saleMode !== saleModeFilter) return false;
       if (paymentFilter !== 'all' && s.paymentMethod !== paymentFilter) return false;
-      return inRange(s.dateKey);
+      return matchesScope(s);
     });
-  }, [sales, branchFilter, saleModeFilter, paymentFilter, effectiveRange]);
+  }, [sales, branchFilter, saleModeFilter, paymentFilter, effectiveRange, datePreset, effectiveSession]);
 
   const filteredReturns = useMemo(() => {
     return returns.filter((r) => {
       if (branchFilter !== 'all' && r.branchId !== branchFilter) return false;
-      return inRange(r.dateKey);
+      return matchesScope(r);
     });
-  }, [returns, branchFilter, effectiveRange]);
+  }, [returns, branchFilter, effectiveRange, datePreset, effectiveSession]);
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter((e) => {
       if (branchFilter !== 'all' && e.branchId !== branchFilter) return false;
-      return inRange(e.dateKey);
+      return matchesScope(e);
     });
-  }, [expenses, branchFilter, effectiveRange]);
+  }, [expenses, branchFilter, effectiveRange, datePreset, effectiveSession]);
 
   const filteredTransfers = useMemo(() => {
     return transfers.filter((t) => {
       if (branchFilter !== 'all' && t.fromBranchId !== branchFilter && t.toBranchId !== branchFilter)
         return false;
-      return inRange(t.dateKey);
+      return matchesScope(t);
     });
-  }, [transfers, branchFilter, effectiveRange]);
+  }, [transfers, branchFilter, effectiveRange, datePreset, effectiveSession]);
 
   const filteredRecs = useMemo(() => {
     return reconciliations.filter((r) => {
       if (branchFilter !== 'all' && r.branchId !== branchFilter) return false;
-      return inRange(r.dateKey);
+      return matchesScope(r);
     });
-  }, [reconciliations, branchFilter, effectiveRange]);
+  }, [reconciliations, branchFilter, effectiveRange, datePreset, effectiveSession]);
 
   const summary = useMemo(
     () => calculateAccountingSummary(filteredSales, filteredReturns, filteredExpenses),
@@ -196,6 +220,8 @@ export const ReportsView: React.FC = () => {
           <div className="flex flex-wrap items-center gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-800">
             {(
               [
+                { id: 'active_session', label: 'Active Session' },
+                { id: 'session', label: 'By Session (EOD)' },
                 { id: 'today', label: 'Today' },
                 { id: 'yesterday', label: 'Yesterday' },
                 { id: '7d', label: 'Last 7 Days' },
@@ -257,14 +283,84 @@ export const ReportsView: React.FC = () => {
 
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={() =>
+                effectiveSession
+                  ? setSessionModalState({ mode: 'eod_report', session: effectiveSession })
+                  : window.print()
+              }
               className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 cursor-pointer"
             >
               <Printer className="h-3.5 w-3.5" />
-              <span>Print</span>
+              <span>{effectiveSession ? 'EOD Summary' : 'Print'}</span>
             </button>
           </div>
         </div>
+
+        {(datePreset === 'active_session' || datePreset === 'session') && (
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <Clock className="h-3.5 w-3.5 text-teal-600" />
+              {datePreset === 'session' ? (
+                <select
+                  value={effectiveSession?.id || ''}
+                  onChange={(e) => setSelectedSessionId(e.target.value)}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-mono font-semibold dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                >
+                  {sessions.length === 0 ? (
+                    <option value="">No recorded sessions yet</option>
+                  ) : (
+                    sessions.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.sessionNumber} · {s.branchName} · {s.businessDateKey} ({s.status.toUpperCase()})
+                      </option>
+                    ))
+                  )}
+                </select>
+              ) : activeSession ? (
+                <span className="font-medium text-slate-700 dark:text-slate-200">
+                  Active Session <span className="font-mono font-bold">{activeSession.sessionNumber}</span> · Business Day{' '}
+                  <span className="font-mono font-semibold">{activeSession.businessDateKey}</span> · Opened{' '}
+                  {formatDateTimeMs(activeSession.openedAtMs)}
+                </span>
+              ) : (
+                <span className="text-amber-700 dark:text-amber-400 font-medium">
+                  No open session on {activeBranch?.name || 'active branch'}. Open a session to tag transactions independent of device clock.
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              {!activeSession && (
+                <button
+                  type="button"
+                  onClick={() => setSessionModalState({ mode: 'open' })}
+                  className="inline-flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 cursor-pointer"
+                >
+                  <Play className="h-3 w-3" />
+                  <span>Open Day Session</span>
+                </button>
+              )}
+              {effectiveSession && effectiveSession.status === 'open' && (
+                <button
+                  type="button"
+                  onClick={() => setSessionModalState({ mode: 'close', session: effectiveSession })}
+                  className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 cursor-pointer"
+                >
+                  Close Session &amp; Run EOD
+                </button>
+              )}
+              {effectiveSession && (
+                <button
+                  type="button"
+                  onClick={() => setSessionModalState({ mode: 'eod_report', session: effectiveSession })}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 cursor-pointer"
+                >
+                  View / Print EOD Report
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {datePreset === 'custom' && (
           <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
@@ -621,52 +717,134 @@ export const ReportsView: React.FC = () => {
         </div>
       )}
 
-      {/* AUDIT REPORT CARD */}
+      {/* AUDIT & SESSIONS REPORT CARD */}
       {activeReportCard === 'audit' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-            <h4 className="text-xs font-bold uppercase text-slate-500 mb-3">
-              Transfers ({filteredTransfers.length})
-            </h4>
-            <div className="space-y-2 text-xs">
-              {filteredTransfers.map((t) => (
-                <div key={t.id} className="border-b border-slate-100 pb-2 dark:border-slate-800">
-                  <p className="font-mono font-bold">{t.trackingNumber}</p>
-                  <p className="text-slate-500">
-                    {t.fromBranchName} → {t.toBranchName} ({t.totalQty} units)
-                  </p>
-                </div>
-              ))}
+        <div className="space-y-4">
+          <div className="rounded-xl border border-slate-200 bg-white overflow-hidden dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 dark:border-slate-800">
+              <h4 className="text-xs font-bold uppercase text-slate-600 dark:text-slate-300">
+                Business Day Sessions &amp; EOD History ({sessions.length})
+              </h4>
+              {!activeSession && (
+                <button
+                  type="button"
+                  onClick={() => setSessionModalState({ mode: 'open' })}
+                  className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 cursor-pointer"
+                >
+                  Open New Session
+                </button>
+              )}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-[11px] uppercase text-slate-500">
+                  <tr>
+                    <th className="py-2.5 px-4">Session #</th>
+                    <th className="py-2.5 px-4">Branch &amp; Biz Date</th>
+                    <th className="py-2.5 px-4">Status</th>
+                    <th className="py-2.5 px-4 text-right">Net Sales</th>
+                    <th className="py-2.5 px-4 text-right">Variance</th>
+                    <th className="py-2.5 px-4 text-right">EOD Report</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {sessions.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-slate-500">
+                        No sessions opened yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    sessions.map((ses) => (
+                      <tr key={ses.id}>
+                        <td className="py-2.5 px-4 font-mono font-bold text-slate-900 dark:text-white">
+                          {ses.sessionNumber}
+                        </td>
+                        <td className="py-2.5 px-4">
+                          {ses.branchName} · <span className="font-mono">{ses.businessDateKey}</span>
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <span
+                            className={`font-semibold uppercase text-[11px] ${
+                              ses.status === 'open' ? 'text-teal-700 dark:text-teal-400' : 'text-slate-500'
+                            }`}
+                          >
+                            {ses.status}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-4 text-right font-mono tabular-nums">
+                          {ses.status === 'closed' ? formatCurrency(ses.netSalesTotal, cur) : 'In Progress'}
+                        </td>
+                        <td className="py-2.5 px-4 text-right font-mono tabular-nums">
+                          {ses.status === 'closed' ? formatCurrency(ses.varianceTotal, cur) : '—'}
+                        </td>
+                        <td className="py-2.5 px-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSessionModalState({
+                                mode: ses.status === 'open' ? 'close' : 'eod_report',
+                                session: ses,
+                              })
+                            }
+                            className="inline-flex items-center gap-1 rounded border border-slate-300 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 cursor-pointer"
+                          >
+                            <span>{ses.status === 'open' ? 'Close & EOD' : 'View / Print EOD'}</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-            <h4 className="text-xs font-bold uppercase text-slate-500 mb-3">
-              Returns ({filteredReturns.length})
-            </h4>
-            <div className="space-y-2 text-xs">
-              {filteredReturns.map((r) => (
-                <div key={r.id} className="border-b border-slate-100 pb-2 dark:border-slate-800">
-                  <p className="font-mono font-bold">{r.trackingNumber}</p>
-                  <p className="text-slate-500">
-                    -{formatCurrency(r.refundTotal, cur)} · {r.reason}
-                  </p>
-                </div>
-              ))}
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+              <h4 className="text-xs font-bold uppercase text-slate-500 mb-3">
+                Transfers ({filteredTransfers.length})
+              </h4>
+              <div className="space-y-2 text-xs">
+                {filteredTransfers.map((t) => (
+                  <div key={t.id} className="border-b border-slate-100 pb-2 dark:border-slate-800">
+                    <p className="font-mono font-bold">{t.trackingNumber}</p>
+                    <p className="text-slate-500">
+                      {t.fromBranchName} → {t.toBranchName} ({t.totalQty} units)
+                    </p>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-            <h4 className="text-xs font-bold uppercase text-slate-500 mb-3">
-              Reconciliations ({filteredRecs.length})
-            </h4>
-            <div className="space-y-2 text-xs">
-              {filteredRecs.map((rec) => (
-                <div key={rec.id} className="border-b border-slate-100 pb-2 dark:border-slate-800">
-                  <p className="font-mono font-bold">{rec.trackingNumber}</p>
-                  <p className="text-slate-500">
-                    {rec.branchName} · Variance: {formatCurrency(rec.varianceTotal, cur)}
-                  </p>
-                </div>
-              ))}
+            <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+              <h4 className="text-xs font-bold uppercase text-slate-500 mb-3">
+                Returns ({filteredReturns.length})
+              </h4>
+              <div className="space-y-2 text-xs">
+                {filteredReturns.map((r) => (
+                  <div key={r.id} className="border-b border-slate-100 pb-2 dark:border-slate-800">
+                    <p className="font-mono font-bold">{r.trackingNumber}</p>
+                    <p className="text-slate-500">
+                      -{formatCurrency(r.refundTotal, cur)} · {r.reason}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+              <h4 className="text-xs font-bold uppercase text-slate-500 mb-3">
+                Reconciliations ({filteredRecs.length})
+              </h4>
+              <div className="space-y-2 text-xs">
+                {filteredRecs.map((rec) => (
+                  <div key={rec.id} className="border-b border-slate-100 pb-2 dark:border-slate-800">
+                    <p className="font-mono font-bold">{rec.trackingNumber}</p>
+                    <p className="text-slate-500">
+                      {rec.branchName} · Variance: {formatCurrency(rec.varianceTotal, cur)}
+                    </p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -674,6 +852,14 @@ export const ReportsView: React.FC = () => {
 
       {previewSale && company && (
         <ReceiptModal sale={previewSale} company={company} onClose={() => setPreviewSale(null)} />
+      )}
+
+      {sessionModalState && (
+        <SessionModal
+          initialMode={sessionModalState.mode}
+          inspectSession={sessionModalState.session}
+          onClose={() => setSessionModalState(null)}
+        />
       )}
     </div>
   );

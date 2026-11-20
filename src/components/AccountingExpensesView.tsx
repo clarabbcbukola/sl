@@ -4,9 +4,11 @@ import {
   CheckCircle2,
   Download,
   PackagePlus,
+  Play,
   Plus,
   Receipt,
   Scale,
+  Square,
   X,
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
@@ -14,12 +16,14 @@ import { ExpenseType, Product } from '../types';
 import { calculateAccountingSummary, roundMoney } from '../utils/accounting';
 import { downloadCSVFile, exportRowsToCSV } from '../utils/csv';
 import { formatCurrency, getTodayDateKey } from '../utils/format';
+import { SessionModal } from './SessionModal';
 
 export const AccountingExpensesView: React.FC = () => {
   const {
     company,
     branches,
     activeBranch,
+    activeSession,
     products,
     sales,
     returns,
@@ -32,6 +36,7 @@ export const AccountingExpensesView: React.FC = () => {
   const cur = company?.currency || '₦';
   const [subTab, setSubTab] = useState<'expenses' | 'ledger' | 'reconciliation'>('expenses');
   const [branchFilter, setBranchFilter] = useState<string>(activeBranch?.id || 'all');
+  const [sessionModalMode, setSessionModalMode] = useState<'open' | 'close' | null>(null);
 
   // Expense Form State
   const [expBranchId, setExpBranchId] = useState<string>(activeBranch?.id || branches[0]?.id || '');
@@ -715,7 +720,45 @@ export const AccountingExpensesView: React.FC = () => {
 
       {/* TAB 3: ACCURATE DAILY RECONCILIATION */}
       {subTab === 'reconciliation' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
+            <div className="text-xs">
+              {activeSession ? (
+                <p className="text-slate-700 dark:text-slate-200">
+                  <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                    Active Session: {activeSession.sessionNumber}
+                  </span>{' '}
+                  · {activeSession.branchName} · Business Date{' '}
+                  <span className="font-mono font-semibold">{activeSession.businessDateKey}</span>
+                </p>
+              ) : (
+                <p className="text-slate-600 dark:text-slate-300">
+                  No open business-day session. Open a session for device-clock-independent EOD reconciliation.
+                </p>
+              )}
+            </div>
+            {activeSession ? (
+              <button
+                type="button"
+                onClick={() => setSessionModalMode('close')}
+                className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 cursor-pointer"
+              >
+                <Square className="h-3 w-3 fill-current" />
+                <span>Close Session &amp; EOD</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setSessionModalMode('open')}
+                className="flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 cursor-pointer"
+              >
+                <Play className="h-3 w-3 fill-current" />
+                <span>Start Day Session</span>
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <form
             onSubmit={handleCommitReconciliation}
             className="lg:col-span-6 rounded-xl border border-slate-200 bg-white p-6 space-y-4 dark:border-slate-800 dark:bg-slate-900"
@@ -897,7 +940,15 @@ export const AccountingExpensesView: React.FC = () => {
               )}
             </div>
           </div>
+          </div>
         </div>
+      )}
+
+      {sessionModalMode && (
+        <SessionModal
+          initialMode={sessionModalMode}
+          onClose={() => setSessionModalMode(null)}
+        />
       )}
     </div>
   );
